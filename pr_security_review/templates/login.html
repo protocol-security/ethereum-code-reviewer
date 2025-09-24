@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ethereum Triager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #1a202c;
+            background: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-container {
+            max-width: 500px;
+            width: 100%;
+            margin: 2rem;
+            text-align: center;
+        }
+        
+        .login-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+        }
+        
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+        
+        .login-subtitle {
+            font-size: 1.125rem;
+            color: #4a5568;
+            margin-bottom: 2rem;
+        }
+        
+        .login-description {
+            color: #718096;
+            margin-bottom: 2rem;
+            line-height: 1.7;
+        }
+        
+        .google-signin-container {
+            margin: 2rem 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .signin-status {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            text-align: center;
+            display: none;
+        }
+        
+        .signin-status.loading {
+            background: #bee3f8;
+            color: #2c5282;
+            display: block;
+        }
+        
+        .signin-status.error {
+            background: #fed7d7;
+            color: #c53030;
+            display: block;
+        }
+        
+        .signin-status.success {
+            background: #c6f6d5;
+            color: #2f855a;
+            display: block;
+        }
+        
+        .security-features {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-top: 2rem;
+            text-align: left;
+        }
+        
+        .security-features h3 {
+            color: #2d3748;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .security-features ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .security-features li {
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: #4a5568;
+        }
+        
+        .security-features li i {
+            color: #48bb78;
+            width: 20px;
+            text-align: center;
+        }
+        
+        .whitelist-info {
+            background: #fffaf0;
+            border-left: 4px solid #f6ad55;
+            padding: 1rem;
+            border-radius: 0 8px 8px 0;
+            margin-top: 1.5rem;
+        }
+        
+        .whitelist-info h4 {
+            color: #744210;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .whitelist-info p {
+            color: #744210;
+            font-size: 0.875rem;
+        }
+        
+        @media (max-width: 768px) {
+            .login-container {
+                margin: 1rem;
+            }
+            
+            .login-card {
+                padding: 2rem;
+            }
+            
+            .login-title {
+                font-size: 1.5rem;
+            }
+            
+            .login-subtitle {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-title">
+                <i class="fas fa-shield-alt"></i>
+                Ethereum Triager
+            </div>
+                    
+            <div class="google-signin-container">
+                {% if google_client_id %}
+                <div id="g_id_onload"
+                     data-client_id="{{ google_client_id }}"
+                     data-context="signin"
+                     data-ux_mode="popup"
+                     data-callback="handleCredentialResponse"
+                     data-auto_prompt="false">
+                </div>
+                
+                <div class="g_id_signin"
+                     data-type="standard"
+                     data-shape="rectangular"
+                     data-theme="outline"
+                     data-text="signin_with"
+                     data-size="large"
+                     data-logo_alignment="left">
+                </div>
+                {% else %}
+                <div class="signin-status error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Google Sign-In is not configured. Please contact your administrator.
+                </div>
+                {% endif %}
+            </div>
+            
+            <div id="signin-status" class="signin-status"></div>
+        </div>
+    </div>
+    
+    <script>
+        function handleCredentialResponse(response) {
+            const statusDiv = document.getElementById('signin-status');
+            
+            // Show loading state
+            statusDiv.className = 'signin-status loading';
+            statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
+            
+            // Send the ID token to the server
+            fetch('/auth/google', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    idToken: response.credential
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.className = 'signin-status success';
+                    statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> Authentication successful! Redirecting...';
+                    
+                    // Redirect to the main page
+                    setTimeout(() => {
+                        window.location.href = data.redirect || '/';
+                    }, 1000);
+                } else {
+                    statusDiv.className = 'signin-status error';
+                    statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (data.error || 'Authentication failed');
+                }
+            })
+            .catch(error => {
+                console.error('Authentication error:', error);
+                statusDiv.className = 'signin-status error';
+                statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Authentication failed. Please try again.';
+            });
+        }
+        
+        // Handle authentication errors
+        window.addEventListener('load', function() {
+            // Give the Google library time to load before checking
+            setTimeout(function() {
+                if (typeof google === 'undefined') {
+                    const statusDiv = document.getElementById('signin-status');
+                    statusDiv.className = 'signin-status error';
+                    statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Google Sign-In library failed to load. Please refresh the page.';
+                }
+            }, 2000); // Wait 2 seconds for Google library to load
+        });
+    </script>
+</body>
+</html>

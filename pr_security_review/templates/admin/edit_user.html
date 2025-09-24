@@ -1,0 +1,458 @@
+{% extends "base.html" %}
+
+{% block title %}Ethereum Triager{% endblock %}
+{% block page_title %}Ethereum Triager{% endblock %}
+
+{% block extra_head %}
+<style>
+    .form-container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    
+    .form-header {
+        background: #f7fafc;
+        padding: 2rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .form-header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .form-header p {
+        color: #4a5568;
+        font-size: 0.875rem;
+    }
+    
+    .user-info {
+        background: #edf2f7;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .user-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: #667eea;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1.125rem;
+    }
+    
+    .user-details h3 {
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 0.25rem;
+    }
+    
+    .user-email {
+        color: #4a5568;
+        font-size: 0.875rem;
+    }
+    
+    .form-content {
+        padding: 2rem;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+        display: block;
+        font-weight: 500;
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .form-input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        transition: border-color 0.2s;
+    }
+    
+    .form-input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-input:disabled {
+        background: #f7fafc;
+        color: #4a5568;
+    }
+    
+    .form-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .form-checkbox input {
+        width: 16px;
+        height: 16px;
+        accent-color: #667eea;
+    }
+    
+    .form-checkbox label {
+        font-weight: 500;
+        color: #2d3748;
+        font-size: 0.875rem;
+    }
+    
+    .repository-access {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        background: #f7fafc;
+    }
+    
+    .access-type {
+        margin-bottom: 1rem;
+    }
+    
+    .access-type label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 0.5rem;
+    }
+    
+    .access-type input[type="radio"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #667eea;
+    }
+    
+    .access-type label:hover {
+        background: #edf2f7;
+    }
+    
+    .access-type input[type="radio"]:checked + label {
+        background: #edf2f7;
+        border-color: #667eea;
+    }
+    
+    .repositories-list {
+        display: none;
+        margin-top: 1rem;
+        padding: 1rem;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .repositories-list.show {
+        display: block;
+    }
+    
+    .repo-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        margin-bottom: 0.5rem;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+    
+    .repo-checkbox:hover {
+        background: #f7fafc;
+    }
+    
+    .repo-checkbox input {
+        width: 16px;
+        height: 16px;
+        accent-color: #667eea;
+    }
+    
+    .repo-checkbox label {
+        font-size: 0.875rem;
+        color: #2d3748;
+        flex: 1;
+    }
+    
+    .form-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        padding-top: 1rem;
+        border-top: 1px solid #e2e8f0;
+    }
+    
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 500;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #5a67d8;
+        transform: translateY(-1px);
+    }
+    
+    .btn-secondary {
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+    
+    .btn-secondary:hover {
+        background: #cbd5e0;
+    }
+    
+    .help-text {
+        font-size: 0.75rem;
+        color: #718096;
+        margin-top: 0.25rem;
+    }
+    
+    .alert {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    
+    .alert-error {
+        background: #fed7d7;
+        border: 1px solid #fc8181;
+        color: #c53030;
+    }
+    
+    .alert-success {
+        background: #f0fff4;
+        border: 1px solid #9ae6b4;
+        color: #22543d;
+    }
+    
+    @media (max-width: 768px) {
+        .form-container {
+            margin: 0 1rem;
+        }
+        
+        .form-header,
+        .form-content {
+            padding: 1rem;
+        }
+        
+        .form-actions {
+            flex-direction: column;
+        }
+        
+        .user-info {
+            flex-direction: column;
+            text-align: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1>
+            <i class="fas fa-user-edit"></i>
+            Edit User
+        </h1>
+        <p>Update user information and repository access</p>
+        
+        <div class="user-info">
+            <div class="user-avatar">
+                {{ user_data.name[0].upper() if user_data.name else user_data.email[0].upper() }}
+            </div>
+            <div class="user-details">
+                <h3>{{ user_data.name or 'No name' }}</h3>
+                <div class="user-email">{{ user_data.email }}</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="form-content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'error' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <form method="POST" action="{{ url_for('admin_edit_user', email=user_data.email) }}">
+            <div class="form-group">
+                <label for="email" class="form-label">Email Address</label>
+                <input type="email" id="email" name="email" class="form-input" value="{{ user_data.email }}" disabled>
+                <div class="help-text">Email address cannot be changed</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="name" class="form-label">Display Name *</label>
+                <input type="text" id="name" name="name" class="form-input" value="{{ user_data.name or '' }}" required>
+                <div class="help-text">The user's display name</div>
+            </div>
+            
+            <!-- Only show admin checkbox for owners -->
+            {% if user.email == 'fredrik.svantes@ethereum.org' or (user.is_owner is defined and user.is_owner) %}
+            <div class="form-group">
+                <div class="form-checkbox">
+                    <input type="checkbox" id="is_admin" name="is_admin" {{ 'checked' if user_data.is_admin else '' }}>
+                    <label for="is_admin">Admin User</label>
+                </div>
+                <div class="help-text">Admin users have access to all repositories and can manage other users</div>
+            </div>
+            {% endif %}
+            
+            <div class="form-group">
+                <div class="form-checkbox">
+                    <input type="checkbox" id="is_active" name="is_active" {{ 'checked' if user_data.is_active else '' }}>
+                    <label for="is_active">Active User</label>
+                </div>
+                <div class="help-text">Inactive users cannot log in to the system</div>
+            </div>
+            
+            <div class="form-group">
+                <div class="form-checkbox">
+                    <input type="checkbox" id="email_notifications" name="email_notifications" {{ 'checked' if user_data.email_notifications_enabled else '' }}>
+                    <label for="email_notifications">Email Notifications</label>
+                </div>
+                <div class="help-text">Enable email notifications for new findings, status changes, and comments</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Repository Access</label>
+                <div class="repository-access">
+                    <div class="access-type">
+                        <input type="radio" id="access_all" name="access_type" value="all" 
+                               {{ 'checked' if not user_data.repository_access or user_data.is_admin else '' }}>
+                        <label for="access_all">
+                            <i class="fas fa-globe"></i>
+                            All Repositories
+                        </label>
+                        <div class="help-text">User can access all repositories</div>
+                    </div>
+                    
+                    <div class="access-type">
+                        <input type="radio" id="access_specific" name="access_type" value="specific"
+                               {{ 'checked' if user_data.repository_access and not user_data.is_admin else '' }}>
+                        <label for="access_specific">
+                            <i class="fas fa-list"></i>
+                            Specific Repositories
+                        </label>
+                        <div class="help-text">User can only access selected repositories</div>
+                    </div>
+                    
+                    <div class="repositories-list" id="repositoriesList">
+                        {% if repositories %}
+                            {% for repo in repositories %}
+                            <div class="repo-checkbox">
+                                <input type="checkbox" id="repo_{{ loop.index }}" name="repositories" value="{{ repo.name }}"
+                                       {{ 'checked' if user_data.repository_access and repo.name in user_data.repository_access else '' }}>
+                                <label for="repo_{{ loop.index }}">{{ repo.name }}</label>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="help-text">No repositories configured</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">
+                    <i class="fas fa-times"></i>
+                    Cancel
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i>
+                    Update User
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const accessAllRadio = document.getElementById('access_all');
+    const accessSpecificRadio = document.getElementById('access_specific');
+    const repositoriesList = document.getElementById('repositoriesList');
+    const adminCheckbox = document.getElementById('is_admin');
+    
+    function updateRepositoryAccess() {
+        if (accessSpecificRadio.checked) {
+            repositoriesList.classList.add('show');
+        } else {
+            repositoriesList.classList.remove('show');
+        }
+    }
+    
+    function updateAdminStatus() {
+        if (adminCheckbox && adminCheckbox.checked) {
+            // If admin is checked, force all access and disable repository selection
+            accessAllRadio.checked = true;
+            accessSpecificRadio.disabled = true;
+            repositoriesList.classList.remove('show');
+        } else {
+            // If admin is unchecked, enable repository selection
+            accessSpecificRadio.disabled = false;
+            updateRepositoryAccess();
+        }
+    }
+    
+    accessAllRadio.addEventListener('change', updateRepositoryAccess);
+    accessSpecificRadio.addEventListener('change', updateRepositoryAccess);
+    if (adminCheckbox) {
+        adminCheckbox.addEventListener('change', updateAdminStatus);
+    }
+    
+    // Initial state
+    updateRepositoryAccess();
+    updateAdminStatus();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,725 @@
+{% extends "base.html" %}
+
+{% block title %}Ethereum Triager{% endblock %}
+{% block page_title %}Ethereum Triager{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dashboard-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        text-align: center;
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+        border: 2px solid transparent;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stat-card.active {
+        border-color: #667eea;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+    }
+    
+    .stat-card.total {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    }
+    
+    .stat-card.vulnerable {
+        background: linear-gradient(135deg, #fc466b 0%, #3f5efb 100%);
+        color: white;
+    }
+    
+    .stat-card.safe {
+        background: linear-gradient(135deg, #d4fc79 0%, #96e6a1 100%);
+    }
+    
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+    
+    .stat-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        opacity: 0.8;
+    }
+    
+    .findings-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+    
+    .findings-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .filters {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .filter-select {
+        padding: 0.5rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: white;
+        color: #4a5568;
+        font-size: 0.875rem;
+    }
+    
+    .search-box {
+        padding: 0.5rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: white;
+        color: #4a5568;
+        font-size: 0.875rem;
+        width: 200px;
+    }
+    
+    .findings-grid {
+        display: grid;
+        gap: 1.5rem;
+    }
+    
+    .finding-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+    }
+    
+    .finding-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .finding-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    
+    .finding-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .repo-name {
+        font-size: 0.875rem;
+        color: #667eea;
+        font-weight: 500;
+    }
+    
+    .finding-badges {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    .badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    .badge.vulnerable {
+        background: #fc8181;
+        color: white;
+    }
+    
+    .badge.safe {
+        background: #48bb78;
+        color: white;
+    }
+    
+    .badge.confidence {
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+    
+    .finding-content {
+        padding: 1.5rem;
+    }
+    
+    .finding-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        color: #4a5568;
+    }
+    
+    .meta-item i {
+        color: #667eea;
+        width: 16px;
+        text-align: center;
+    }
+    
+    .meta-value {
+        font-weight: 500;
+        color: #2d3748;
+    }
+    
+    .finding-summary {
+        color: #4a5568;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+    }
+    
+    .commit-info {
+        background: #f7fafc;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .commit-message {
+        color: #4a5568;
+        font-family: 'Monaco', 'Consolas', monospace;
+        margin-bottom: 0.5rem;
+    }
+    
+    .commit-details {
+        display: flex;
+        gap: 1rem;
+        font-size: 0.75rem;
+        color: #718096;
+    }
+    
+    .commit-details a {
+        color: #667eea;
+        text-decoration: none;
+    }
+    
+    .commit-details a:hover {
+        text-decoration: underline;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #718096;
+    }
+    
+    .empty-state i {
+        font-size: 4rem;
+        color: #cbd5e0;
+        margin-bottom: 1rem;
+    }
+    
+    .empty-state h3 {
+        font-size: 1.5rem;
+        color: #4a5568;
+        margin-bottom: 1rem;
+    }
+    
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem;
+        font-size: 1.125rem;
+        color: #4a5568;
+    }
+    
+    .loading-spinner i {
+        margin-right: 0.5rem;
+    }
+    
+    .pagination-container {
+        margin-top: 2rem;
+        padding: 1.5rem;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .pagination-info {
+        color: #4a5568;
+        font-size: 0.875rem;
+    }
+    
+    .pagination-nav {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    
+    .pagination-btn {
+        padding: 0.5rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        text-decoration: none;
+        color: #4a5568;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: white;
+    }
+    
+    .pagination-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: #f7fafc;
+    }
+    
+    .pagination-btn.current {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+    
+    .pagination-btn.current:hover {
+        background: #5a67d8;
+        border-color: #5a67d8;
+        color: white;
+    }
+    
+    @media (max-width: 768px) {
+        .pagination-container {
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .pagination-nav {
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .pagination-btn {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+        }
+        .dashboard-stats {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+        
+        .findings-header {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+        
+        .filters {
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 100%;
+        }
+        
+        .search-box {
+            width: 100%;
+        }
+        
+        .finding-header {
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .finding-meta {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-stats">
+    <div class="stat-card total {% if current_filters.vulnerability_filter == 'all' %}active{% endif %}" data-filter="all" onclick="filterByType('all')">
+        <div class="stat-value">
+            <i class="fas fa-database"></i>
+            {{ filtered_stats.total }}
+        </div>
+        <div class="stat-label">All</div>
+    </div>
+    
+    <div class="stat-card vulnerable {% if current_filters.vulnerability_filter == 'vulnerable' %}active{% endif %}" data-filter="vulnerable" onclick="filterByType('vulnerable')">
+        <div class="stat-value">
+            <i class="fas fa-exclamation-triangle"></i>
+            {{ filtered_stats.vulnerable }}
+        </div>
+        <div class="stat-label">Suspicious</div>
+    </div>
+    
+    <div class="stat-card safe {% if current_filters.vulnerability_filter == 'safe' %}active{% endif %}" data-filter="safe" onclick="filterByType('safe')">
+        <div class="stat-value">
+            <i class="fas fa-shield-alt"></i>
+            {{ filtered_stats.safe }}
+        </div>
+        <div class="stat-label">Safe</div>
+    </div>
+</div>
+
+<div class="findings-header">
+    <div class="findings-title">
+        <i class="fas fa-list"></i>
+        Alerts
+    </div>
+    
+    <div class="filters">
+        <!-- Only show repository filter if user has access to multiple repositories -->
+        {% if accessible_repositories|length > 1 %}
+        <select class="filter-select" id="repositoryFilter" onchange="applyFilters()">
+            <option value="">All Repositories</option>
+            {% for repo in accessible_repositories %}
+                <option value="{{ repo.name.lower() }}" {% if current_filters.repository_filter == repo.name.lower() %}selected{% endif %}>{{ repo.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        
+        <select class="filter-select" id="statusFilter" onchange="applyFilters()">
+            <option value="">All Status</option>
+            <option value="unassigned" {% if current_filters.status_filter == 'unassigned' %}selected{% endif %}>Unassigned</option>
+            <option value="reviewing" {% if current_filters.status_filter == 'reviewing' %}selected{% endif %}>Reviewing</option>
+            <option value="escalated_to_client" {% if current_filters.status_filter == 'escalated_to_client' %}selected{% endif %}>Escalated to Client</option>
+            <option value="completed" {% if current_filters.status_filter == 'completed' %}selected{% endif %}>Completed</option>
+        </select>
+        
+        <select class="filter-select" id="classificationFilter" onchange="applyFilters()" {% if current_filters.status_filter != 'completed' %}style="display: none;"{% endif %}>
+            <option value="">All</option>
+            <option value="true_positive" {% if current_filters.classification_filter == 'true_positive' %}selected{% endif %}>True Positive</option>
+            <option value="false_positive" {% if current_filters.classification_filter == 'false_positive' %}selected{% endif %}>False Positive</option>
+        </select>
+        
+        <select class="filter-select" id="userFilter" onchange="applyFilters()">
+            <option value="">All Users</option>
+            {% for user in unique_users %}
+                <option value="{{ user }}" {% if current_filters.user_filter == user %}selected{% endif %}>{{ user }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+<div class="findings-grid" id="findingsGrid">
+    {% if findings %}
+    {% for finding in findings %}
+    <div class="finding-card" 
+        data-href="{{ url_for('triage_finding', finding_uuid=finding.uuid) }}">
+        
+        <div class="finding-header">
+            <div>
+                <div class="finding-title">
+                    <i class="fas fa-code-branch"></i>
+                    {{ finding.repo_name }}
+                </div>
+                <div class="repo-name">
+                    Repository
+                </div>
+            </div>
+            
+            <div class="finding-badges">
+                {% set status = finding.triage_status or 'unassigned' %}
+                {% if status == 'completed' %}
+                    <!-- Show classification for completed cases -->
+                    {% if finding.completion_classification == 'true_positive' %}
+                        <div class="badge" style="background: #fc8181; color: white;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            True Positive
+                        </div>
+                    {% elif finding.completion_classification == 'false_positive' %}
+                        <div class="badge" style="background: #48bb78; color: white;">
+                            <i class="fas fa-times-circle"></i>
+                            False Positive
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <!-- Show vulnerability status and confidence for non-completed cases -->
+                    {% if finding.has_vulnerabilities %}
+                        <div class="badge vulnerable">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Vulnerable
+                        </div>
+                    {% else %}
+                        <div class="badge safe">
+                            <i class="fas fa-shield-alt"></i>
+                            Safe
+                        </div>
+                    {% endif %}
+                    
+                    {% if finding.confidence_score %}
+                        <div class="badge confidence">
+                            {{ finding.confidence_score }}% Confidence
+                        </div>
+                    {% endif %}
+                {% endif %}
+                
+                <!-- Triage Status Badge -->
+                {% if status == 'unassigned' %}
+                    <div class="badge" style="background: #f7fafc; color: #4a5568; border: 1px solid #e2e8f0;">
+                        <i class="fas fa-circle"></i>
+                        Unassigned
+                    </div>
+                {% elif status == 'reviewing' %}
+                    <div class="badge" style="background: #fef5e7; color: #c05621; border: 1px solid #f6ad55;">
+                        <i class="fas fa-eye"></i>
+                        Reviewing
+                    </div>
+                {% elif status == 'escalated_to_client' %}
+                    <div class="badge" style="background: #fed7d7; color: #c53030; border: 1px solid #fc8181;">
+                        <i class="fas fa-exclamation"></i>
+                        Escalated
+                    </div>
+                {% elif status == 'completed' %}
+                    <div class="badge" style="background: #f0fff4; color: #22543d; border: 1px solid #48bb78;">
+                        <i class="fas fa-check"></i>
+                        Completed
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+            
+            <div class="finding-content">
+                <div class="finding-meta">
+                    <div class="meta-item">
+                        <i class="fas fa-code-commit"></i>
+                        <span class="meta-value">{{ finding.commit_sha[:7] if finding.commit_sha else 'Unknown' }}</span>
+                    </div>
+                    
+                    <div class="meta-item">
+                        <i class="fas fa-user"></i>
+                        <span class="meta-value">{{ finding.author or 'Unknown' }}</span>
+                    </div>
+                    
+                    <div class="meta-item">
+                        <i class="fas fa-calendar"></i>
+                        <span class="meta-value">
+                            {% if finding.created_at %}
+                                {{ finding.created_at[:10] }}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </span>
+                    </div>
+                    
+                    <div class="meta-item">
+                        <i class="fas fa-bug"></i>
+                        <span class="meta-value">{{ finding.findings_count or 0 }} Issues</span>
+                    </div>
+                </div>
+                
+                {% if finding.summary %}
+                <div class="finding-summary">
+                    {{ finding.summary[:200] }}{% if finding.summary|length > 200 %}...{% endif %}
+                </div>
+                {% endif %}
+                
+                {% if finding.commit_message %}
+                <div class="commit-info">
+                    <div class="commit-message">
+                        {{ finding.commit_message[:100] }}{% if finding.commit_message|length > 100 %}...{% endif %}
+                    </div>
+                    <div class="commit-details">
+                        {% if finding.branch %}
+                            <span><i class="fas fa-code-branch"></i> {{ finding.branch }}</span>
+                        {% endif %}
+                        {% if finding.commit_url %}
+                            <a href="{{ finding.commit_url }}" target="_blank" onclick="event.stopPropagation()">
+                                <i class="fas fa-external-link-alt"></i> View Commit
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-state" id="noFindingsMessage">
+            <i class="fas fa-search"></i>
+            <h3>No Security Findings</h3>
+            <p>No security findings are currently available. Findings will appear here once the security review system analyzes code repositories.</p>
+        </div>
+    {% endif %}
+    
+    {% if not findings and pagination.total == 0 %}
+    <div class="empty-state" id="noFilteredResults">
+        <i class="fas fa-filter"></i>
+        <h3>No Results Found</h3>
+        <p>No findings match the current filters. Try selecting a different repository or vulnerability status.</p>
+    </div>
+    {% endif %}
+</div>
+
+{% if pagination %}
+<div class="pagination-container">
+    <div class="pagination-info">
+        <span>Showing {{ ((pagination.page - 1) * pagination.per_page + 1) if findings else 0 }} to {{ ((pagination.page - 1) * pagination.per_page + findings|length) if findings else 0 }} of {{ pagination.total }} results</span>
+    </div>
+    
+    <div class="pagination-nav">
+        <select class="filter-select" id="perPageFilter" onchange="changePerPage(this.value)" style="margin-right: 1rem;">
+            <option value="10" {% if pagination.per_page == 10 %}selected{% endif %}>10 per page</option>
+            <option value="25" {% if pagination.per_page == 25 %}selected{% endif %}>25 per page</option>
+            <option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50 per page</option>
+            <option value="75" {% if pagination.per_page == 75 %}selected{% endif %}>75 per page</option>
+            <option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100 per page</option>
+        </select>
+        
+        {% if pagination.pages > 1 %}
+            {% if pagination.has_prev %}
+                <a href="?page={{ pagination.prev_num }}&per_page={{ pagination.per_page }}&vulnerability_filter={{ current_filters.vulnerability_filter }}&repository_filter={{ current_filters.repository_filter }}&status_filter={{ current_filters.status_filter }}&classification_filter={{ current_filters.classification_filter }}&user_filter={{ current_filters.user_filter }}" class="pagination-btn">
+                    <i class="fas fa-chevron-left"></i>
+                    Previous
+                </a>
+            {% endif %}
+            
+            {% for page_num in pagination.iter_pages %}
+                {% if page_num == pagination.page %}
+                    <span class="pagination-btn current">{{ page_num }}</span>
+                {% else %}
+                    <a href="?page={{ page_num }}&per_page={{ pagination.per_page }}&vulnerability_filter={{ current_filters.vulnerability_filter }}&repository_filter={{ current_filters.repository_filter }}&status_filter={{ current_filters.status_filter }}&classification_filter={{ current_filters.classification_filter }}&user_filter={{ current_filters.user_filter }}" class="pagination-btn">{{ page_num }}</a>
+                {% endif %}
+            {% endfor %}
+            
+            {% if pagination.has_next %}
+                <a href="?page={{ pagination.next_num }}&per_page={{ pagination.per_page }}&vulnerability_filter={{ current_filters.vulnerability_filter }}&repository_filter={{ current_filters.repository_filter }}&status_filter={{ current_filters.status_filter }}&classification_filter={{ current_filters.classification_filter }}&user_filter={{ current_filters.user_filter }}" class="pagination-btn">
+                    Next
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function filterByType(filterType) {
+    // Get current URL parameters
+    var urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('vulnerability_filter', filterType);
+    urlParams.set('page', '1'); // Reset to page 1 when changing filter
+    
+    // Redirect to the new URL
+    window.location.href = window.location.pathname + '?' + urlParams.toString();
+}
+
+function applyFilters() {
+    // Get current URL parameters
+    var urlParams = new URLSearchParams(window.location.search);
+    
+    // Get filter values
+    var repositoryFilterElement = document.getElementById('repositoryFilter');
+    var repositoryFilter = repositoryFilterElement ? repositoryFilterElement.value : '';
+    var statusFilter = document.getElementById('statusFilter').value;
+    var classificationFilter = document.getElementById('classificationFilter').value;
+    var userFilter = document.getElementById('userFilter').value;
+    
+    // Update URL parameters
+    urlParams.set('repository_filter', repositoryFilter);
+    urlParams.set('status_filter', statusFilter);
+    urlParams.set('classification_filter', classificationFilter);
+    urlParams.set('user_filter', userFilter);
+    urlParams.set('page', '1'); // Reset to page 1 when changing filters
+    
+    // Show/hide classification filter based on status
+    var classificationFilterElement = document.getElementById('classificationFilter');
+    if (statusFilter === 'completed') {
+        classificationFilterElement.style.display = 'block';
+    } else {
+        classificationFilterElement.style.display = 'none';
+        urlParams.set('classification_filter', ''); // Reset classification filter when hidden
+    }
+    
+    // Redirect to the new URL
+    window.location.href = window.location.pathname + '?' + urlParams.toString();
+}
+
+function changePerPage(perPage) {
+    // Get current URL parameters
+    var urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('per_page', perPage);
+    urlParams.set('page', '1'); // Reset to page 1 when changing per_page
+    
+    // Redirect to the new URL
+    window.location.href = window.location.pathname + '?' + urlParams.toString();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var statusFilter = document.getElementById('statusFilter');
+    var classificationFilter = document.getElementById('classificationFilter');
+    var findingCards = document.querySelectorAll('.finding-card');
+    
+    // Show/hide classification filter based on current status
+    if (statusFilter && classificationFilter) {
+        if (statusFilter.value === 'completed') {
+            classificationFilter.style.display = 'block';
+        } else {
+            classificationFilter.style.display = 'none';
+        }
+    }
+
+    findingCards.forEach(card => {
+        card.addEventListener('click', function () {
+            const href = this.getAttribute('data-href');
+            if (href) {
+                window.location.href = href;
+            }
+        });
+    });
+
+    setInterval(function() {
+        window.location.reload();
+    }, 5 * 60 * 1000);
+});
+</script>
+{% endblock %}

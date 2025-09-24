@@ -1,0 +1,40 @@
+name: 'PR Security Review'
+description: 'Automated security review of pull requests using LLMs'
+inputs:
+  github-token:
+    description: 'GitHub token for accessing PR content'
+    required: true
+  llm-provider:
+    description: 'LLM provider to use (anthropic or openai)'
+    required: false
+    default: 'anthropic'
+  anthropic-api-key:
+    description: 'Anthropic API key for Claude access'
+    required: false
+  openai-api-key:
+    description: 'OpenAI API key for GPT access'
+    required: false
+  claude-model:
+    description: 'Specific Claude model to use'
+    required: false
+    default: 'claude-sonnet-4-20250514'
+  gpt-model:
+    description: 'Specific GPT model to use (default: gpt-4.1)'
+    required: false
+    default: 'gpt-4.1'
+  docs-dir:
+    description: 'Directory containing vulnerability documentation'
+    required: false
+  voyage-api-key:
+    description: 'Voyage AI API key for embeddings (required for Claude with docs-dir)'
+    required: false
+  voyage-model:
+    description: 'Voyage AI model to use'
+    required: false
+    default: 'voyage-3-large'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+branding:
+  icon: 'shield'
+  color: 'blue'

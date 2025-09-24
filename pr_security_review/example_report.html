@@ -1,0 +1,245 @@
+<div class="main-card">
+        <div class="card-header">
+            <h2><i class="fas fa-code-branch"></i> Repository: ethereum/example-contract</h2>
+        </div>
+        <div class="card-content">
+            <div class="repo-info">
+                <div class="info-item">
+                    <i class="fas fa-code-branch"></i>
+                    <span class="info-label">Branch:</span>
+                    <span class="info-value">main</span>
+                </div>
+                <div class="info-item">
+                    <i class="fas fa-code-commit"></i>
+                    <span class="info-label">Commit:</span>
+                    <span class="info-value">
+                        <a href="#" target="_blank">abc1234</a>
+                    </span>
+                </div>
+                <div class="info-item">
+                    <i class="fas fa-user"></i>
+                    <span class="info-label">Author:</span>
+                    <span class="info-value">example-developer</span>
+                </div>
+                <div class="info-item">
+                    <i class="far fa-calendar"></i>
+                    <span class="info-label">Date:</span>
+                    <span class="info-value">2025-01-15 10:30:00</span>
+                </div>
+            </div>
+            
+            <h3><i class="fas fa-comment-dots"></i> Commit Message</h3>
+            <div class="commit-message">
+                feat: Add new staking mechanism with rewards distribution
+            </div>
+            
+            <div class="score-section">
+                <div class="score-card">
+                    <div class="score-value">85%</div>
+                    <div class="score-label">Confidence Score</div>
+                </div>
+                <div class="score-card vulnerable">
+                    <div class="score-value">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="score-label">
+                        Vulnerabilities Detected
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="multi-judge">
+        <h3><i class="fas fa-robot"></i> Multi-Judge Analysis</h3>
+        <p>This analysis was performed using <strong>3 LLM judges</strong> with weighted voting.</p>
+        
+        <div class="judge-stats">
+            <div class="stat-card">
+                <div class="stat-value">3.0</div>
+                <div class="stat-label">Total Weight</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">0.50</div>
+                <div class="stat-label">Required Threshold</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">0.67</div>
+                <div class="stat-label">Actual Vote Score</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">
+                    <i class="fas fa-exclamation-triangle" style="color: #fc8181;"></i>
+                </div>
+                <div class="stat-label">
+                    Vulnerabilities Detected
+                </div>
+            </div>
+        </div>
+        
+        <h4>Individual LLM Results</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>LLM Provider</th>
+                    <th>Weight</th>
+                    <th>Vote</th>
+                    <th>Confidence</th>
+                    <th>Issues Found</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Anthropic</strong></td>
+                    <td>1</td>
+                    <td><i class="fas fa-exclamation-triangle" style="color: #fc8181;"></i> YES</td>
+                    <td>90%</td>
+                    <td>2 issue(s)<br><small>(1 HIGH, 1 MEDIUM)</small></td>
+                    <td>Found reentrancy vulnerability in reward distribution...</td>
+                </tr>
+                <tr>
+                    <td><strong>Openai</strong></td>
+                    <td>1</td>
+                    <td><i class="fas fa-exclamation-triangle" style="color: #fc8181;"></i> YES</td>
+                    <td>80%</td>
+                    <td>1 issue(s)<br><small>(1 HIGH)</small></td>
+                    <td>Detected potential reentrancy attack vector...</td>
+                </tr>
+                <tr>
+                    <td><strong>Gemini</strong></td>
+                    <td>1</td>
+                    <td><i class="fas fa-check-circle" style="color: #48bb78;"></i> NO</td>
+                    <td>85%</td>
+                    <td>None</td>
+                    <td>Code appears secure with proper access controls...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="main-card">
+        <div class="card-header">
+            <h3><i class="fas fa-clipboard-check"></i> Analysis Summary</h3>
+        </div>
+        <div class="card-content">
+            <div class="summary-section">
+                <p>The security analysis has identified potential vulnerabilities in the new staking mechanism. The main concern is a reentrancy vulnerability in the reward distribution function that could allow malicious contracts to drain funds. Additionally, there are concerns about integer overflow in reward calculations.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="main-card">
+        <div class="card-header">
+            <h3><i class="fas fa-bug"></i> Detailed Findings</h3>
+        </div>
+        <div class="card-content findings-section">
+            <div class="finding-card">
+                <div class="finding-header high">
+                    <div>
+                        <span class="severity-badge high">
+                            <i class="fas fa-exclamation-circle"></i> HIGH Severity
+                        </span>
+                    </div>
+                    <span class="confidence-badge">
+                        90% Confidence
+                    </span>
+                </div>
+                <div class="finding-content">
+                    <h4>Description</h4>
+                    <p>Reentrancy vulnerability in the distributeRewards() function. The function makes external calls before updating state variables, allowing malicious contracts to re-enter and drain funds.</p>
+                    
+                    <div class="recommendation">
+                        <h4><i class="fas fa-lightbulb"></i> Recommendation</h4>
+                        <p>Implement the checks-effects-interactions pattern. Update all state variables before making any external calls.</p>
+                    </div>
+                    
+                    <div class="details-box">
+                        <!-- <button class="details-toggle">
+                            <i class="fas fa-chevron-down"></i>
+                            View Detailed Explanation
+                        </button> -->
+                        <div class="details-content">
+                            <h4><i class="fas fa-question-circle"></i> What is the issue?</h4>
+                            <p>A reentrancy attack occurs when a malicious contract calls back into the calling contract before the first invocation of the function is finished. This can lead to unexpected behavior and fund drainage.</p>
+                            
+                            <h4><i class="fas fa-exclamation-triangle"></i> What can happen?</h4>
+                            <p>An attacker could create a malicious contract that, when receiving rewards, immediately calls back into the distributeRewards() function. This could allow them to claim rewards multiple times before the contract's state is updated, potentially draining all funds from the contract.</p>
+                            
+                            <h4><i class="fas fa-wrench"></i> How to fix it?</h4>
+                            <p>Follow the checks-effects-interactions pattern: 1) Check all conditions, 2) Update the contract's state, 3) Only then interact with external contracts. Additionally, consider using OpenZeppelin's ReentrancyGuard modifier.</p>
+                            
+                            <h4><i class="fas fa-code"></i> Code example</h4>
+                            <pre><code>// Before (vulnerable):
+function distributeRewards(address recipient) external {
+    uint256 reward = calculateReward(recipient);
+    recipient.transfer(reward);  // External call
+    rewards[recipient] = 0;      // State update after call
+}
+
+// After (secure):
+function distributeRewards(address recipient) external nonReentrant {
+    uint256 reward = calculateReward(recipient);
+    rewards[recipient] = 0;      // State update before call
+    recipient.transfer(reward);  // External call last
+}</code></pre>
+                            
+                            <h4><i class="fas fa-book"></i> Additional resources</h4>
+                            <ul>
+                                <li><a href="https://docs.soliditylang.org/en/latest/security-considerations.html#reentrancy" target="_blank">Solidity Documentation: Reentrancy</a></li>
+                                <li><a href="https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/security/ReentrancyGuard.sol" target="_blank">OpenZeppelin ReentrancyGuard</a></li>
+                                <li><a href="https://consensys.net/diligence/blog/2019/09/stop-using-soliditys-transfer-now/" target="_blank">Best Practices for External Calls</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="finding-card">
+                <div class="finding-header medium">
+                    <div>
+                        <span class="severity-badge medium">
+                            <i class="fas fa-exclamation-triangle"></i> MEDIUM Severity
+                        </span>
+                    </div>
+                    <span class="confidence-badge">
+                        75% Confidence
+                    </span>
+                </div>
+                <div class="finding-content">
+                    <h4>Description</h4>
+                    <p>Potential integer overflow in reward calculation. The multiplication of stake amount and reward rate could exceed uint256 maximum value for large stakes.</p>
+                    
+                    <div class="recommendation">
+                        <h4><i class="fas fa-lightbulb"></i> Recommendation</h4>
+                        <p>Use OpenZeppelin's SafeMath library or Solidity 0.8.x built-in overflow checks to prevent integer overflow.</p>
+                    </div>
+                    
+                    <div class="details-box">
+                        <!-- <button class="details-toggle">
+                            <i class="fas fa-chevron-down"></i>
+                            View Detailed Explanation
+                        </button> -->
+                        <div class="details-content">
+                            <h4><i class="fas fa-question-circle"></i> What is the issue?</h4>
+                            <p>Integer overflow occurs when an arithmetic operation results in a number larger than the maximum value that can be stored in the data type.</p>
+                            
+                            <h4><i class="fas fa-exclamation-triangle"></i> What can happen?</h4>
+                            <p>If the calculation overflows, it will wrap around to a small number, potentially causing users to receive incorrect (much smaller) rewards than intended.</p>
+                            
+                            <h4><i class="fas fa-wrench"></i> How to fix it?</h4>
+                            <p>Use Solidity 0.8.x or newer which has built-in overflow protection, or explicitly use SafeMath library for older versions.</p>
+                            
+                            <h4><i class="fas fa-code"></i> Code example</h4>
+                            <pre><code>// Solidity 0.8.x (automatic overflow protection):
+uint256 reward = stakeAmount * rewardRate / PRECISION;
+
+// For older versions, use SafeMath:
+using SafeMath for uint256;
+uint256 reward = stakeAmount.mul(rewardRate).div(PRECISION);</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

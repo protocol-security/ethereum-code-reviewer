@@ -1,0 +1,1044 @@
+{% extends "base.html" %}
+
+{% block title %}Ethereum Triager{% endblock %}
+{% block page_title %}Ethereum Triager{% endblock %}
+
+{% block extra_head %}
+<style>
+    .triage-container {
+        display: grid;
+        grid-template-columns: 1fr 300px;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    /* Single column layout when no triage panel (unauthenticated users) */
+    .triage-container:has(.finding-content:only-child) {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Fallback for browsers that don't support :has() */
+    .triage-container.no-triage {
+        grid-template-columns: 1fr;
+    }
+    
+    .finding-content {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    
+    /* Finding content styles - matching the /finding/ pages */
+    .main-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        overflow: hidden;
+        margin-bottom: 2rem;
+    }
+    
+    .multi-judge {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        padding: 2rem;
+        margin: 2rem 0;
+    }
+    
+    .multi-judge h3 {
+        color: #2d3748;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .judge-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        background: #f7fafc;
+        padding: 1rem;
+        border-radius: 8px;
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #2d3748;
+    }
+    
+    .stat-label {
+        font-size: 0.75rem;
+        color: #718096;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+    }
+    
+    th {
+        background: #f7fafc;
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        color: #4a5568;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    tr:hover {
+        background: #f7fafc;
+    }
+    
+    .repo-info {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .info-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        overflow: hidden;
+    }
+    
+    .info-item i {
+        color: #667eea;
+        width: 20px;
+        text-align: center;
+        flex-shrink: 0;
+    }
+    
+    .info-label {
+        font-weight: 500;
+        color: #4a5568;
+        min-width: 80px;
+        flex-shrink: 0;
+    }
+    
+    .info-value {
+        color: #1a202c;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+    }
+    
+    .info-value a {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+    }
+    
+    .info-value a:hover {
+        text-decoration: underline;
+    }
+    
+    .commit-message {
+        background: #f7fafc;
+        border-left: 4px solid #667eea;
+        padding: 1rem 1.5rem;
+        border-radius: 0 8px 8px 0;
+        margin: 1.5rem 0;
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 0.9rem;
+    }
+    
+    .score-section {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+    
+    .score-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .score-card.safe {
+        background: linear-gradient(135deg, #d4fc79 0%, #96e6a1 100%);
+    }
+    
+    .score-card.vulnerable {
+        background: linear-gradient(135deg, #fc466b 0%, #3f5efb 100%);
+        color: white;
+    }
+    
+    .score-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    
+    .score-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .summary-section {
+        background: #edf2f7;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin: 2rem 0;
+    }
+    
+    .findings-section {
+        margin-top: 2rem;
+    }
+    
+    .finding-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        margin-bottom: 1.5rem;
+        overflow: hidden;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .finding-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    
+    .finding-header {
+        padding: 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .finding-header.high {
+        background: #fff5f5;
+        border-left: 4px solid #fc8181;
+    }
+    
+    .finding-header.medium {
+        background: #fffaf0;
+        border-left: 4px solid #f6ad55;
+    }
+    
+    .finding-header.low {
+        background: #fffff0;
+        border-left: 4px solid #f6e05e;
+    }
+    
+    .severity-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .severity-badge.high {
+        background: #fc8181;
+        color: white;
+    }
+    
+    .severity-badge.medium {
+        background: #f6ad55;
+        color: white;
+    }
+    
+    .severity-badge.low {
+        background: #f6e05e;
+        color: #744210;
+    }
+    
+    .confidence-badge {
+        background: #e2e8f0;
+        color: #4a5568;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .finding-content h4 {
+        color: #2d3748;
+        margin-bottom: 0.75rem;
+        font-size: 1.125rem;
+    }
+    
+    .finding-content p {
+        color: #4a5568;
+        margin-bottom: 1rem;
+    }
+    
+    .recommendation {
+        background: #e6fffa;
+        border-left: 4px solid #4fd1c5;
+        padding: 1rem;
+        border-radius: 0 8px 8px 0;
+        margin: 1rem 0;
+    }
+    
+    .details-box {
+        margin-top: 1.5rem;
+    }
+    
+    .details-toggle {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: background 0.2s;
+    }
+    
+    .details-toggle:hover {
+        background: #5a67d8;
+    }
+    
+    .details-content {
+        display: block;
+        margin-top: 1rem;
+        padding: 1.5rem;
+        background: #f7fafc;
+        border-radius: 8px;
+    }
+    
+    .details-content.hide {
+        display: none;
+    }
+    
+    .details-content h4 {
+        color: #2d3748;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .details-content h4:first-child {
+        margin-top: 0;
+    }
+    
+    .details-content h4 i {
+        color: #667eea;
+        font-size: 0.875rem;
+    }
+    
+    pre {
+        background: #2d3748;
+        color: #e2e8f0;
+        padding: 1rem;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        margin: 1rem 0;
+    }
+    
+    code {
+        background: #edf2f7;
+        color: #e53e3e;
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+    }
+    
+    pre code {
+        background: transparent;
+        color: inherit;
+        padding: 0;
+    }
+    
+    .triage-panel {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        padding: 2rem;
+        height: fit-content;
+    }
+    
+    .triage-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .triage-header h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin: 0;
+    }
+    
+    .status-badge {
+        padding: 0.5rem 1rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .status-badge.unassigned {
+        background: #f7fafc;
+        color: #4a5568;
+        border: 2px solid #e2e8f0;
+    }
+    
+    .status-badge.reviewing {
+        background: #fef5e7;
+        color: #c05621;
+        border: 2px solid #f6ad55;
+    }
+    
+    .status-badge.escalated_to_client {
+        background: #fed7d7;
+        color: #c53030;
+        border: 2px solid #fc8181;
+    }
+    
+    .status-badge.completed {
+        background: #f0fff4;
+        color: #22543d;
+        border: 2px solid #48bb78;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 0.5rem;
+    }
+    
+    .form-select,
+    .form-input,
+    .form-textarea {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        background: white;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    
+    .form-select:focus,
+    .form-input:focus,
+    .form-textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+    
+    .completion-classification {
+        display: none;
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #fff5f5;
+        border: 1px solid #fed7d7;
+        border-radius: 8px;
+    }
+    
+    .completion-classification.show {
+        display: block;
+    }
+    
+    .classification-options {
+        display: flex;
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+    
+    .radio-option {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .radio-option input[type="radio"] {
+        width: auto;
+    }
+    
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+    }
+    
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #5a67d8;
+    }
+    
+    .btn-secondary {
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+    
+    .btn-secondary:hover {
+        background: #cbd5e0;
+    }
+    
+    .assignment-info {
+        background: #f7fafc;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .assignment-info strong {
+        color: #2d3748;
+    }
+    
+    .assignment-info .user-email {
+        color: #667eea;
+        font-weight: 500;
+    }
+    
+    .assignment-info .timestamp {
+        color: #718096;
+        font-size: 0.75rem;
+    }
+    
+    .status-history {
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid #e2e8f0;
+    }
+    
+    .status-history h3 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .history-item {
+        background: #f7fafc;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 0.75rem;
+        border-left: 4px solid #667eea;
+    }
+    
+    .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.5rem;
+    }
+    
+    .history-status {
+        font-weight: 600;
+        color: #2d3748;
+    }
+    
+    .history-user {
+        color: #667eea;
+        font-weight: 500;
+        font-size: 0.875rem;
+    }
+    
+    .history-timestamp {
+        color: #718096;
+        font-size: 0.75rem;
+    }
+    
+    .history-notes {
+        color: #4a5568;
+        font-style: italic;
+        margin-top: 0.5rem;
+    }
+    
+    .alert {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        display: none;
+    }
+    
+    .alert.show {
+        display: block;
+    }
+    
+    .alert-success {
+        background: #f0fff4;
+        border: 1px solid #9ae6b4;
+        color: #22543d;
+    }
+    
+    .alert-error {
+        background: #fff5f5;
+        border: 1px solid #fed7d7;
+        color: #c53030;
+    }
+    
+    .back-link {
+        margin-bottom: 2rem;
+    }
+    
+    @media (max-width: 1024px) {
+        .triage-container {
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+        
+        .triage-panel {
+            position: static;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if is_authenticated %}
+<div class="back-link">
+    <a href="/" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Back to Dashboard
+    </a>
+</div>
+{% endif %}
+
+<div class="triage-container">
+    <div class="finding-content">
+        {{ finding.html_content|safe }}
+    </div>
+    
+    {% if is_authenticated %}
+    <div class="triage-panel">
+        <div class="triage-header">
+            <h2>
+                <i class="fas fa-clipboard-check"></i>
+                Triage
+            </h2>
+        </div>
+        
+        <div id="alert-container"></div>
+        
+        <!-- Current Status -->
+        <div class="form-group">
+            <label class="form-label">Current Status</label>
+            <div class="status-badge {{ finding.triage_status }}">
+                <i class="fas fa-circle"></i>
+                {{ finding.triage_status.replace('_', ' ').title() }}
+            </div>
+        </div>
+        
+        <!-- Assignment Information -->
+        {% if finding.assigned_to %}
+        <div class="assignment-info">
+            <strong>Assigned to:</strong> 
+            <span class="user-email">{{ finding.assigned_to }}</span>
+            {% if finding.assigned_at %}
+            <div class="timestamp">
+                Assigned: {{ finding.assigned_at[:19].replace('T', ' ') }} UTC
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <!-- Triage Form -->
+        <form id="triageForm">
+            <input type="hidden" id="findingUuid" value="{{ finding.uuid }}">
+            
+            <div class="form-group">
+                <label for="status" class="form-label">Update Status</label>
+                <select id="status" class="form-select" required>
+                    <option value="unassigned" {% if finding.triage_status == 'unassigned' %}selected{% endif %}>Unassigned</option>
+                    <option value="reviewing" {% if finding.triage_status == 'reviewing' %}selected{% endif %}>Reviewing</option>
+                    <option value="escalated_to_client" {% if finding.triage_status == 'escalated_to_client' %}selected{% endif %}>Escalated to Client</option>
+                    <option value="completed" {% if finding.triage_status == 'completed' %}selected{% endif %}>Completed</option>
+                </select>
+            </div>
+            
+            <!-- Completion Classification (shown only when status is completed) -->
+            <div id="completionClassification" class="completion-classification">
+                <label class="form-label">Classification</label>
+                <p style="margin-bottom: 0.5rem; color: #4a5568; font-size: 0.875rem;">
+                    How would you classify this finding?
+                </p>
+                <div class="classification-options">
+                    <div class="radio-option">
+                        <input type="radio" id="truePositive" name="classification" value="true_positive" 
+                               {% if finding.completion_classification == 'true_positive' %}checked{% endif %}>
+                        <label for="truePositive">True Positive</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="falsePositive" name="classification" value="false_positive"
+                               {% if finding.completion_classification == 'false_positive' %}checked{% endif %}>
+                        <label for="falsePositive">False Positive</label>
+                    </div>
+                </div>
+            </div>
+            
+            
+            <!-- Submit Button -->
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+                <i class="fas fa-save"></i>
+                Update Triage Status
+            </button>
+        </form>
+        
+        <!-- Notes Section -->
+        <div class="notes-section" style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid #e2e8f0;">
+            <h3 style="font-size: 1.125rem; font-weight: 600; color: #2d3748; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-sticky-note"></i>
+                Notes
+            </h3>
+            
+            <form id="notesForm">
+                <input type="hidden" id="notesFindingUuid" value="{{ finding.uuid }}">
+                
+                <div class="form-group">
+                    <label for="newNote" class="form-label">Add Note</label>
+                    <textarea id="newNote" class="form-textarea" placeholder="Write your note here..." rows="3"></textarea>
+                </div>
+                
+                <button type="submit" class="btn btn-primary" style="width: 100%;">
+                    <i class="fas fa-plus"></i>
+                    Add Note
+                </button>
+            </form>
+            
+            <!-- Existing Notes -->
+            <div id="notes-list" style="margin-top: 1.5rem;">
+                <!-- Notes will be loaded here -->
+            </div>
+        </div>
+        
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Toggle details sections for finding content
+document.querySelectorAll('.details-toggle').forEach(button => {
+    // Initialize icons as expanded (up arrow) since content is shown by default
+    const icon = button.querySelector('i');
+    if (icon) {
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-up');
+    }
+    
+    button.addEventListener('click', function() {
+        const content = this.nextElementSibling;
+        content.classList.toggle('hide');
+        const icon = this.querySelector('i');
+        if (content.classList.contains('hide')) {
+            icon.classList.remove('fa-chevron-up');
+            icon.classList.add('fa-chevron-down');
+        } else {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Only initialize triage functionality if user is authenticated
+    const statusSelect = document.getElementById('status');
+    const completionDiv = document.getElementById('completionClassification');
+    const triageForm = document.getElementById('triageForm');
+    const notesForm = document.getElementById('notesForm');
+    
+    // Check if triage elements exist (i.e., user is authenticated)
+    if (statusSelect && completionDiv && triageForm) {
+        // Show/hide completion classification based on status
+        function toggleCompletionClassification() {
+            if (statusSelect.value === 'completed') {
+                completionDiv.classList.add('show');
+            } else {
+                completionDiv.classList.remove('show');
+            }
+        }
+        
+        // Initial check
+        toggleCompletionClassification();
+        
+        // Listen for status changes
+        statusSelect.addEventListener('change', toggleCompletionClassification);
+        
+        // Load existing notes
+        loadNotes();
+        
+        // Handle form submission
+        triageForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                status: document.getElementById('status').value
+            };
+            
+            // Add completion classification if status is completed
+            if (formData.status === 'completed') {
+                const classification = document.querySelector('input[name="classification"]:checked');
+                if (!classification) {
+                    showAlert('Please select a classification for completed findings.', 'error');
+                    return;
+                }
+                formData.completion_classification = classification.value;
+            }
+            
+            // Submit the triage update
+            updateTriage(formData);
+        });
+        
+        // Handle notes form submission if it exists
+        if (notesForm) {
+            notesForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const newNote = document.getElementById('newNote').value.trim();
+                if (!newNote) {
+                    showAlert('Please enter a note before submitting.', 'error');
+                    return;
+                }
+                
+                const formData = {
+                    note: newNote
+                };
+                
+                // Submit the note
+                addNote(formData);
+            });
+        }
+    }
+    
+    function updateTriage(data) {
+        const findingUuid = document.getElementById('findingUuid').value;
+        
+        fetch(`/api/triage/${findingUuid}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                showAlert('Triage status updated successfully!', 'success');
+                // Reload page after short delay to show updated status
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showAlert(result.error || 'Failed to update triage status', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('Network error occurred', 'error');
+        });
+    }
+    
+    function addNote(data) {
+        const findingUuid = document.getElementById('notesFindingUuid').value;
+        
+        fetch(`/api/notes/${findingUuid}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                showAlert('Note added successfully!', 'success');
+                // Clear the note input
+                document.getElementById('newNote').value = '';
+                // Reload page after short delay to show updated notes
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showAlert(result.error || 'Failed to add note', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('Network error occurred', 'error');
+        });
+    }
+    
+    function loadNotes() {
+        const findingUuid = document.getElementById('findingUuid').value;
+        
+        fetch(`/api/notes/${findingUuid}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                displayNotes(result.notes);
+            } else {
+                console.error('Failed to load notes:', result.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading notes:', error);
+        });
+    }
+    
+    function displayNotes(notes) {
+        const notesList = document.getElementById('notes-list');
+        
+        if (notes.length === 0) {
+            notesList.innerHTML = '<p style="color: #718096; font-style: italic; text-align: center; margin: 1rem 0;">No notes yet.</p>';
+            return;
+        }
+        
+        let notesHtml = '';
+        notes.forEach(note => {
+            const date = new Date(note.created_at);
+            const formattedDate = date.toISOString().substring(0, 10);
+            const formattedTime = date.toISOString().substring(11, 16);
+            
+            // Truncate email if too long
+            const email = note.created_by;
+            const displayEmail = email.length > 20 ? email.substring(0, 17) + '...' : email;
+            
+            notesHtml += `
+                <div class="note-item" style="background: #f7fafc; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; border-left: 4px solid #38b2ac;">
+                    <div class="note-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; gap: 0.5rem;">
+                        <div style="flex: 1; min-width: 0;">
+                            <div class="note-user" style="color: #38b2ac; font-weight: 500; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${email}">${displayEmail}</div>
+                            <div class="note-timestamp" style="color: #718096; font-size: 0.65rem;">${formattedDate} ${formattedTime}</div>
+                        </div>
+                        <button class="delete-note-btn" data-note-id="${note.id}" style="background: #fc8181; color: white; border: none; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.7rem; cursor: pointer; transition: background 0.2s; flex-shrink: 0;" onmouseover="this.style.background='#f56565'" onmouseout="this.style.background='#fc8181'">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="note-content" style="color: #4a5568; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.4;">${note.note_text}</div>
+                </div>
+            `;
+        });
+        
+        notesList.innerHTML = notesHtml;
+        
+        // Add event listeners to delete buttons
+        document.querySelectorAll('.delete-note-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const noteId = this.getAttribute('data-note-id');
+                if (confirm('Are you sure you want to delete this note?')) {
+                    deleteNote(noteId);
+                }
+            });
+        });
+    }
+    
+    function deleteNote(noteId) {
+        const findingUuid = document.getElementById('findingUuid').value;
+        
+        fetch(`/api/notes/${findingUuid}/${noteId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                showAlert('Note deleted successfully!', 'success');
+                // Reload notes without full page refresh
+                setTimeout(() => {
+                    loadNotes();
+                }, 500);
+            } else {
+                showAlert(result.error || 'Failed to delete note', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('Network error occurred', 'error');
+        });
+    }
+    
+    function showAlert(message, type) {
+        const alertContainer = document.getElementById('alert-container');
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} show`;
+        alertDiv.innerHTML = `
+            <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+            ${message}
+        `;
+        
+        // Remove any existing alerts
+        alertContainer.innerHTML = '';
+        alertContainer.appendChild(alertDiv);
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            alertDiv.classList.remove('show');
+        }, 5000);
+    }
+});
+</script>
+{% endblock %}

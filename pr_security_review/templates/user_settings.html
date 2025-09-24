@@ -1,0 +1,533 @@
+{% extends "base.html" %}
+
+{% block title %}Ethereum Triager{% endblock %}
+{% block page_title %}Ethereum Triager{% endblock %}
+
+{% block extra_head %}
+<style>
+    .settings-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    
+    .settings-content {
+        padding: 0;
+    }
+    
+    /* Ensure navbar styles are not overridden */
+    .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem 0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .header-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .header h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: white;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .logout-btn {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: background 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .logout-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        color: white;
+        text-decoration: none;
+    }
+    
+    .setting-group {
+        margin-bottom: 2rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .setting-group:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+    
+    .setting-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .setting-description {
+        color: #4a5568;
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+    }
+    
+    .form-checkbox {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    
+    .form-checkbox input {
+        width: 18px;
+        height: 18px;
+        accent-color: #667eea;
+        margin-top: 0.125rem;
+        flex-shrink: 0;
+    }
+    
+    .checkbox-content {
+        flex: 1;
+    }
+    
+    .checkbox-label {
+        font-weight: 500;
+        color: #2d3748;
+        font-size: 0.875rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .checkbox-help {
+        font-size: 0.75rem;
+        color: #718096;
+    }
+    
+    .settings-user-info {
+        background: #edf2f7;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    
+    .info-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+    }
+    
+    .info-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .info-label {
+        font-weight: 500;
+        color: #4a5568;
+        font-size: 0.875rem;
+    }
+    
+    .info-value {
+        color: #2d3748;
+        font-size: 0.875rem;
+    }
+    
+    .save-button {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .save-button:hover {
+        background: #5a67d8;
+        transform: translateY(-1px);
+    }
+    
+    .save-button:disabled {
+        background: #a0aec0;
+        cursor: not-allowed;
+        transform: none;
+    }
+    
+    .alert {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    
+    .alert-success {
+        background: #f0fff4;
+        border: 1px solid #9ae6b4;
+        color: #22543d;
+    }
+    
+    .alert-error {
+        background: #fed7d7;
+        border: 1px solid #fc8181;
+        color: #c53030;
+    }
+    
+    .email-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+    
+    .email-status.enabled {
+        background: #c6f6d5;
+        color: #22543d;
+    }
+    
+    .email-status.disabled {
+        background: #fed7d7;
+        color: #c53030;
+    }
+    
+    .profile-card {
+        background: #f8fafc;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .profile-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1.5rem;
+        background: white;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .profile-avatar {
+        width: 60px;
+        height: 60px;
+        flex-shrink: 0;
+    }
+    
+    .avatar-img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: 3px solid #667eea;
+        object-fit: cover;
+    }
+    
+    .avatar-placeholder {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: #667eea;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: 600;
+        border: 3px solid #667eea;
+    }
+    
+    .profile-details {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .profile-name {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin: 0 0 0.25rem 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .profile-email {
+        color: #4a5568;
+        font-size: 0.875rem;
+        margin: 0 0 0.75rem 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .profile-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .badge-owner {
+        background: #fef5e7;
+        color: #d69e2e;
+        border: 1px solid #f6e05e;
+    }
+    
+    .badge-admin {
+        background: #e6fffa;
+        color: #319795;
+        border: 1px solid #81e6d9;
+    }
+    
+    .badge-user {
+        background: #edf2f7;
+        color: #4a5568;
+        border: 1px solid #cbd5e0;
+    }
+    
+    .badge-notifications-on {
+        background: #f0fff4;
+        color: #22543d;
+        border: 1px solid #9ae6b4;
+    }
+    
+    .badge-notifications-off {
+        background: #fed7d7;
+        color: #c53030;
+        border: 1px solid #fc8181;
+    }
+    
+    .profile-info {
+        padding: 1.5rem;
+    }
+    
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+    
+    .info-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 1rem;
+        background: white;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .info-icon {
+        color: #667eea;
+        width: 20px;
+        text-align: center;
+        flex-shrink: 0;
+        margin-top: 0.125rem;
+    }
+    
+    .info-content {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .info-content .info-label {
+        display: block;
+        font-weight: 500;
+        color: #4a5568;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.25rem;
+    }
+    
+    .info-content .info-value {
+        display: block;
+        color: #2d3748;
+        font-size: 0.875rem;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    @media (max-width: 768px) {
+        .settings-container {
+            margin: 1rem;
+        }
+        
+        .settings-header,
+        .settings-content {
+            padding: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="card">
+        <div class="card-header">
+            <h2 style="margin: 0; font-size: 1.25rem; font-weight: 600; color: #2d3748; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-user"></i>
+                Profile
+            </h2>
+        </div>
+        <div class="card-content">
+            <div class="profile-card">
+                <div class="profile-header">
+                    <div class="profile-avatar">
+                        {% if user.picture %}
+                            <img src="{{ user.picture }}" alt="User Avatar" class="avatar-img">
+                        {% else %}
+                            <div class="avatar-placeholder">
+                                {{ (user.name or user.email)[0].upper() }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="profile-details">
+                        <h3 class="profile-name">{{ user.name or 'No name set' }}</h3>
+                        <p class="profile-email">{{ user.email }}</p>
+                        <div class="profile-badges">
+                            {% if user_data.is_owner %}
+                                <span class="badge badge-owner">Owner</span>
+                            {% elif user_data.is_admin %}
+                                <span class="badge badge-admin">Administrator</span>
+                            {% else %}
+                                <span class="badge badge-user">User</span>
+                            {% endif %}
+                            
+                            {% if user_data.email_notifications_enabled %}
+                                <span class="badge badge-notifications-on">Notifications On</span>
+                            {% else %}
+                                <span class="badge badge-notifications-off">Notifications Off</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="profile-info">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <i class="fas fa-envelope info-icon"></i>
+                            <div class="info-content">
+                                <span class="info-label">Email Address</span>
+                                <span class="info-value">{{ user.email }}</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-user-tag info-icon"></i>
+                            <div class="info-content">
+                                <span class="info-label">Role</span>
+                                <span class="info-value">
+                                    {% if user_data.is_owner %}
+                                        Owner
+                                    {% elif user_data.is_admin %}
+                                        Administrator
+                                    {% else %}
+                                        User
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-code-branch info-icon"></i>
+                            <div class="info-content">
+                                <span class="info-label">Repository Access</span>
+                                <span class="info-value">
+                                    {% if not user_data.repository_access or user_data.is_admin %}
+                                        All Repositories
+                                    {% else %}
+                                        {{ user_data.repository_access|length }} Specific Repository{{ 's' if user_data.repository_access|length != 1 else '' }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-calendar-plus info-icon"></i>
+                            <div class="info-content">
+                                <span class="info-label">Member Since</span>
+                                <span class="info-value">{{ user_data.created_at[:10] if user_data.created_at else 'Unknown' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 2rem;">
+        <div class="card-header">
+            <h2 style="margin: 0; font-size: 1.25rem; font-weight: 600; color: #2d3748; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-envelope"></i>
+                Email Notifications
+                <span class="email-status {{ 'enabled' if user_data.email_notifications_enabled else 'disabled' }}">
+                    <i class="fas fa-{{ 'check' if user_data.email_notifications_enabled else 'times' }}"></i>
+                    {{ 'Enabled' if user_data.email_notifications_enabled else 'Disabled' }}
+                </span>
+            </h2>
+            <p style="margin: 0.5rem 0 0 0; color: #4a5568; font-size: 0.875rem;">Control when you receive email notifications about security findings</p>
+        </div>
+        <div class="card-content">
+            <form method="POST" action="{{ url_for('user_settings') }}">
+                <div class="form-checkbox">
+                    <input type="checkbox" id="email_notifications" name="email_notifications" {{ 'checked' if user_data.email_notifications_enabled else '' }}>
+                    <div class="checkbox-content">
+                        <div class="checkbox-label">Enable Email Notifications</div>
+                        <div class="checkbox-help">
+                            When enabled, you will receive email notifications for:
+                            <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.75rem;">
+                                <li>New security findings in repositories you have access to</li>
+                                <li>Status changes on findings (when someone changes the triage status)</li>
+                                <li>New comments added to findings</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i>
+                    Save Settings
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
