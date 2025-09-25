@@ -5,14 +5,12 @@
 ### Support for many LLM providers
 Anthropic, DeepSeek, Gemini, Llama, OpenAI
 
-### Build
-
-#### Prerequisites
+### Prerequisites
 
 - Python 3.8 or higher
 
 
-#### Github Action
+### Github Action
 You can run as a GitHub Action to have it as part of your CI/CD workflow.
 
 Create a workflow in your repository, e.g., `.github/workflows/security-review.yml`, use the [security-review.yml.example](security-review.yml.example) file as an example.
@@ -21,9 +19,9 @@ Add your API key(s) and other environmental variables to your repository secrets
   - Go to your repository settings
   - Go to Secrets and Variables > Actions
   - Create a new Repository Secret, with the Name ANTHROPIC_API_KEY and the Secret your Anthropic API key.
-  - Create a PR to see it in action. Example: https://github.com/fredrik0x/go-ethereum/pull/2
+  - Create a PR to see it in action. Example output: https://github.com/fredrik0x/go-ethereum/pull/2
 
-#### Quick Demo
+### Quick Demo
 To view how the tool performs in standalone mode, you can build a docker image.
 
 Create a GitHub Personal Access Token (Classic) with read:repo_hook checked: https://github.com/settings/tokens
@@ -68,9 +66,14 @@ Confidence: 85%
 ::warning::Security vulnerabilities detected with 95% confidence
 ```
 
-#### Environment Setup
+### Dependencies
+ ```bash
+ pip install -e .
+ ```
 
-The tool uses environment variables for API keys and configuration. The system prompts are adjusted as environment variables.
+### Environment Setup
+
+The tool uses flags or environment variables for API keys and configuration. The system prompts are adjusted as environment variables.
 
 1. Using a `.env` file:
    ```bash
@@ -94,15 +97,8 @@ The tool uses environment variables for API keys and configuration. The system p
    ...
    ```
 
-The tool will automatically load variables from `.env` if present, falling back to system environment variables.
+The tool will automatically load variables from `.env` if present, falling back to system environment variables or flags.
 
-#### Dependency Setup
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pip install -e .
-   ```
 
 ### Multi-judging
 If more than one provider is enabled, weighted multi-judging is enabled with voting between providers.
@@ -159,14 +155,13 @@ This will then:
 
 ### CLI
 
-#### One-Shot
-Examples using Anthropic
+One-Shot examples using Anthropic
 
 <a href="images/cli.png">
   <img src="images/cli.png" width="200"/>
 </a>
 
-##### Single PR Review
+#### Single PR Review
 
 ```bash
 # Using environment variables
@@ -192,7 +187,7 @@ python -m pr_security_review https://github.com/org/repo/pull/1 \
   --voyage-api-key your_voyage_key        # required if using docs-dir
 ```
 
-##### Analyzing Recent PRs
+#### Analyzing Recent PRs
 
 You can also analyze the last X PRs from a repository to get a broader security overview:
 
@@ -223,7 +218,7 @@ The tool will:
 3. Provide a summary report showing which PRs have security issues
 4. Display total cost information for the batch analysis
 
-##### Single File Analysis
+#### Single File Analysis
 
 You can also analyze individual files:
 
@@ -232,7 +227,7 @@ You can also analyze individual files:
 python -m pr_security_review --file https://github.com/org/repo/blob/main/src/auth.py
 ```
 
-##### Single Commit Analysis
+#### Single Commit Analysis
 
 You can also analyze individual commits:
 
@@ -245,9 +240,7 @@ python -m pr_security_review --repository NethermindEth/Nethermind --analyze-com
 
 You can use the commit monitoring feature that track repositories for new commits and automatically analyze them for security vulnerabilities.
 
-##### Quick Start
-
-###### Add repositories manually
+##### Add repositories manually
 
 ```bash
 # Add a repository to monitor (e.g., Nethermind's master branch)
@@ -260,7 +253,7 @@ python -m pr_security_review --monitor-check
 python -m pr_security_review --monitor-continuous
 ```
 
-##### Common Commands
+#### Common Commands
 
 ```bash
 # List all monitored repositories
@@ -276,7 +269,7 @@ python -m pr_security_review --analyze-commit abc123 --repository owner/repo
 python -m pr_security_review --monitor-continuous --monitor-interval 600
 ```
 
-#### Message Queue
+### Message Queue
 You can use a supported AMQP queue (such as rabbitmq) to receive incoming review requests, and to submit results. Use the AMQP_URL, QUEUE_NAME and RESPONSE_QUEUE_NAME to set this up.
 
 
@@ -370,15 +363,15 @@ You can receive an email whenever a new finding is found by setting the AWS SES 
 You can receive telegram notifications when a review has found a potential vulnerability (or all reviews)
 
 ```bash
-# Set up Telegram notifications with findings server
-export TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-export TELEGRAM_CHAT_ID=your_telegram_chat_id
-export FINDINGS_SERVER_URL=https://your-server-url.com  # Optional: defaults to localhost if not set
-export FINDINGS_SERVER_PORT=8000  # Optional: defaults to 8000
-export NOTIFY_CLEAN_COMMITS=true  # Optional: notify for clean commits with no vulnerabilities
+# Configure Telegram notifications in the .env file with findings web server
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
+FINDINGS_SERVER_URL=https://your-server-url.com  # Optional: defaults to localhost if not set
+FINDINGS_SERVER_PORT=8000  # Optional: defaults to 8000
+NOTIFY_CLEAN_COMMITS=true  # Optional: notify for clean commits with no vulnerabilities
 
 # Start monitoring with Telegram notifications
-python -m pr_security_review --monitor-continuous --notify-clean-commits
+python -m pr_security_review --monitor-continuous
 ```
 
 This will:
