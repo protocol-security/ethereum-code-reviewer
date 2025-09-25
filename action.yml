@@ -1,4 +1,4 @@
-name: 'PR Security Review'
+name: 'Ethereum Security Reviewer'
 description: 'Automated security review of pull requests using LLMs'
 inputs:
   github-token:
@@ -6,11 +6,11 @@ inputs:
     required: true
   llm-provider:
     description: 'LLM provider to use (anthropic or openai)'
-    required: false
+    required: true
     default: 'anthropic'
   anthropic-api-key:
     description: 'Anthropic API key for Claude access'
-    required: false
+    required: true
   openai-api-key:
     description: 'OpenAI API key for GPT access'
     required: false

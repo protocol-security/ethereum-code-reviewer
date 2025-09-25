@@ -1,4 +1,4 @@
-name: Code Reviewer
+name: Ethereum Code Reviewer
 
 on:
   pull_request:
@@ -9,15 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Code Reviewer
-        uses: ethereum-code-reviewer@v1
+      - name: Ethereum Security Reviewer
+        uses: protocol-security/ethereum-code-reviewer@v0.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          llm-provider: 'anthropic'  # or any other supported LLM
+          llm-provider: 'anthropic'
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }} # for Anthropic (Claude)
-          # openai-api-key: ${{ secrets.OPENAI_API_KEY }}     # for OpenAI (GPT)
-          # Optional: specify model version
-          # claude-model: 'claude-sonnet-4-20250514'          # for Anthropic
-          # gpt-model: 'gpt-4.1'                          # for OpenAI
-          # Optional: provide vulnerability documentation
-          # docs-dir: './docs'
