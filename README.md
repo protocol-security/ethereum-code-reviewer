@@ -150,8 +150,8 @@ This will then:
 #### One-Shot
 Examples using Anthropic
 
-<a href="docs/cli.png">
-  <img src="docs/cli.png" width="200"/>
+<a href="images/cli.png">
+  <img src="images/cli.png" width="200"/>
 </a>
 
 ##### Single PR Review
@@ -235,7 +235,7 @@ You can use the commit monitoring feature that track repositories for new commit
 
 ##### Quick Start
 
-###### Option 1: Add repositories manually
+###### Add repositories manually
 
 ```bash
 # Add a repository to monitor (e.g., Nethermind's master branch)
@@ -248,34 +248,6 @@ python -m pr_security_review --monitor-check
 python -m pr_security_review --monitor-continuous
 ```
 
-##### Option 2: Use a configuration file
-
-Create a JSON configuration file with your repositories:
-
-```json
-{
-  "repositories": [
-    {
-      "url": "https://github.com/fredrik0x/go-ethereum",
-      "branches": ["master"]
-    },
-    {
-      "url": "https://github.com/ethereum/solidity",
-      "branches": ["develop", "main"]
-    }
-  ]
-}
-```
-
-Then run with the config file:
-
-```bash
-# Check for new commits using config file
-python -m pr_security_review --monitor-check --config-file config.json
-
-# Start continuous monitoring using config file
-python -m pr_security_review --monitor-continuous --config-file config.json
-```
 ##### Common Commands
 
 ```bash
@@ -300,8 +272,8 @@ You can use a supported AMQP queue (such as rabbitmq) to receive incoming review
 You can also run the tool as a GitHub App, which allows for command-based triggering of security reviews on PRs.
 Example: https://github.com/fredrik0x/go-ethereum/pull/1
 
-<a href="docs/github.png">
-  <img src="docs/github.png" width="200"/>
+<a href="images/github.png">
+  <img src="images/github.png" width="200"/>
 </a>
 
 
@@ -360,17 +332,17 @@ Add your API key(s) and other environmental variables to your repository secrets
 
 
 ### Web Application
-<a href="docs/web1.png">
-  <img src="docs/web1.png" width="200"/>
+<a href="images/web1.png">
+  <img src="images/web1.png" width="200"/>
 </a>
 
-<a href="docs/web2.png">
-  <img src="docs/web2.png" width="200"/>
+<a href="images/web2.png">
+  <img src="images/web2.png" width="200"/>
 </a>
 
 
-<a href="docs/web3.png">
-  <img src="docs/web3.png" width="200"/>
+<a href="images/web3.png">
+  <img src="images/web3.png" width="200"/>
 </a>
 
 
@@ -391,8 +363,8 @@ You can receive an email whenever a new finding is found by setting the AWS SES 
 
 #### Telegram Notifications
 
-<a href="docs/telegram.png">
-  <img src="docs/telegram.png" width="200"/>
+<a href="images/telegram.png">
+  <img src="images/telegram.png" width="200"/>
 </a>
 
 You can receive telegram notifications when a review has found a potential vulnerability (or all reviews)

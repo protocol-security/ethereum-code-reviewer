@@ -905,7 +905,7 @@ def main():
         
         # Parse command line arguments
         parser = argparse.ArgumentParser(description='Analyze PR or file for security vulnerabilities')
-        parser.add_argument('--github-app', action='store_true', help='Run as a GitHub App webhook server')
+        parser.add_argument('--github-app', action='store_true', help='Run as a GitHub App webhook server', default=os.environ.get('GITHUB_APP', '').lower() in ('true', 'yes', '1'))
         parser.add_argument('--port', type=int, default=3000, help='Port for GitHub App webhook server')
         parser.add_argument('--github-app-id', help='GitHub App ID')
         parser.add_argument('--github-private-key', help='GitHub App private key')
@@ -945,7 +945,7 @@ def main():
                                 default=float(os.environ.get('LLAMA_WEIGHT', '0.1')))
         
         parser.add_argument('--model', help='Specific model to use (e.g., claude-sonnet-4-20250514)')
-        parser.add_argument('--docs-dir', help='Directory containing vulnerability documentation')
+        parser.add_argument('--docs-dir', help='Directory containing vulnerability documentation', default=os.environ.get('DOCS_DIR'))
         parser.add_argument('--voyage-api-key', help='Voyage AI API key for embeddings (preferred for all providers with --docs-dir, falls back to OpenAI embeddings if available)', default=os.environ.get('VOYAGE_API_KEY'))
         parser.add_argument('--voyage-model', help='Voyage AI model to use', default='voyage-3-large')
         parser.add_argument('--post-comment', help='Post analysis as a comment on the PR', action='store_true')
@@ -1005,7 +1005,7 @@ def main():
         # Queue listener arguments
         queue_group = parser.add_argument_group('queue listener')
         queue_group.add_argument('--listen-queue', action='store_true', 
-                               help='Listen to RabbitMQ/AMQP queue for analysis requests')
+                               help='Listen to RabbitMQ/AMQP queue for analysis requests', default=os.environ.get('LISTEN_QUEUE', '').lower() in ('true', 'yes', '1'))
         queue_group.add_argument('--amqp-url', help='AMQP connection URL (or set AMQP_URL env var)', 
                                default=os.environ.get('AMQP_URL'))
         queue_group.add_argument('--queue-name', help='Queue name to listen to (or set QUEUE_NAME env var)', 
@@ -1020,14 +1020,13 @@ def main():
         monitor_group.add_argument('--monitor-remove', metavar='URL', help='Remove a repository from monitoring')
         monitor_group.add_argument('--monitor-list', action='store_true', help='List all monitored repositories')
         monitor_group.add_argument('--monitor-check', action='store_true', help='Check for new commits once')
-        monitor_group.add_argument('--monitor-continuous', action='store_true', help='Continuously monitor for new commits')
+        monitor_group.add_argument('--monitor-continuous', action='store_true', help='Continuously monitor for new commits', default=os.environ.get('MONITOR_CONTINUOUS', '').lower() in ('true', 'yes', '1'))
         monitor_group.add_argument('--monitor-interval', type=int, default=300, help='Check interval in seconds for continuous monitoring (default: 300)')
         monitor_group.add_argument('--analyze-commit', metavar='SHA', help='Analyze a specific commit (requires --repository)')
         monitor_group.add_argument('--repository', help='Repository for commit analysis (e.g., owner/repo)')
         monitor_group.add_argument('--telegram-bot-token', help='Telegram bot token for notifications', default=os.environ.get('TELEGRAM_BOT_TOKEN'))
         monitor_group.add_argument('--telegram-chat-id', help='Telegram chat ID for notifications', default=os.environ.get('TELEGRAM_CHAT_ID'))
         monitor_group.add_argument('--notify-clean-commits', action='store_true', help='Send Telegram notifications for clean commits (no vulnerabilities)', default=os.environ.get('NOTIFY_CLEAN_COMMITS', '').lower() in ('true', 'yes', '1'))
-        monitor_group.add_argument('--config-file', help='Path to a configuration file containing repositories to monitor')
         
         args = parser.parse_args()
         
