@@ -2,13 +2,8 @@
 
 ## Capabilities
 
-### Support for many LLM providers
+### Supports many LLM providers
 Anthropic, DeepSeek, Gemini, Llama, OpenAI
-
-### Prerequisites
-
-- Python 3.8 or higher
-
 
 ### Github Action
 You can run as a GitHub Action to have it as part of your CI/CD workflow.
@@ -67,9 +62,11 @@ Confidence: 85%
 ```
 
 ### Dependencies
- ```bash
- pip install -e .
- ```
+Python 3.8 or higher
+
+```bash
+pip install -e .
+```
 
 ### Environment Setup
 
