@@ -11,6 +11,18 @@ Anthropic, DeepSeek, Gemini, Llama, OpenAI
 
 - Python 3.8 or higher
 
+
+#### Github Action
+You can run as a GitHub Action to have it as part of your CI/CD workflow.
+
+Create a workflow in your repository, e.g., `.github/workflows/security-review.yml`, use the [security-review.yml.example](security-review.yml.example) file as an example.
+
+Add your API key(s) and other environmental variables to your repository secrets:
+  - Go to your repository settings
+  - Go to Secrets and Variables > Actions
+  - Create a new Repository Secret, with the Name ANTHROPIC_API_KEY and the Secret your Anthropic API key.
+  - Create a PR to see it in action. Example: https://github.com/fredrik0x/go-ethereum/pull/2
+
 #### Quick Demo
 To view how the tool performs in standalone mode, you can build a docker image.
 
@@ -317,18 +329,6 @@ The app will now:
 - Automatically analyze new PRs and PR updates
 - Allow repository admins/maintainers to trigger analysis by commenting `/security-review` on any PR
 
-
-
-### GitHub Actions
-#### Setup
-You can run the tool as a GitHub Action to have it as part of your CI/CD workflow.
-
-Create a workflow in your repository, e.g., `.github/workflows/security-review.yml`.
-You can use the security-review.yml.example file as an example.
-
-Add your API key(s) and other environmental variables to your repository secrets:
-   - Go to your repository settings
-   - Go to Secrets and Variables > Actions
 
 
 ### Web Application
