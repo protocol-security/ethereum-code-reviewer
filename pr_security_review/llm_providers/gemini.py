@@ -84,9 +84,8 @@ class GeminiProvider(LLMProvider):
                 "response_mime_type": "application/json",
             }
             
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT')
-            if not system_prompt:
-                raise ValueError("LLM_SYNTHESIS_SYSTEM_PROMPT environment variable is not set.")
+            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT',
+                "You are a security expert specializing in code review. Return ONLY JSON output with no additional text or explanation.")
             
             model = genai.GenerativeModel(
                 model_name=self.model,

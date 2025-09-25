@@ -96,10 +96,9 @@ class MultiJudgeProvider(LLMProvider):
         """Use Anthropic to synthesize a combined report from all analyses."""
         anthropic = self.providers['anthropic']
         
-        # Load synthesis intro from environment variable (required)
-        synthesis_intro = os.getenv('LLM_SYNTHESIS_PROMPT_INTRO')
-        if not synthesis_intro:
-            raise ValueError("LLM_SYNTHESIS_PROMPT_INTRO environment variable is not set.")
+        # Load synthesis intro from environment variable (with default)
+        synthesis_intro = os.getenv('LLM_SYNTHESIS_PROMPT_INTRO',
+            "You are a security expert tasked with synthesizing multiple security analyses into a single coherent report.")
         
         # Create a synthesis prompt
         synthesis_prompt = f"""{synthesis_intro}
@@ -124,9 +123,8 @@ Here are their individual analyses:
                 for finding in result['findings']:
                     synthesis_prompt += f"  * {finding['severity']}: {finding['description']}\n"
         
-        synthesis_instruction = os.getenv('LLM_SYNTHESIS_PROMPT_INSTRUCTION')
-        if not synthesis_instruction:
-            raise ValueError("LLM_SYNTHESIS_PROMPT_INSTRUCTION environment variable is not set.")
+        synthesis_instruction = os.getenv('LLM_SYNTHESIS_PROMPT_INSTRUCTION',
+            "Please synthesize these analyses into a single, coherent security report. Combine similar findings, use the highest confidence scores where appropriate, and create a unified summary.")
         
         synthesis_prompt += f"""
 
@@ -159,9 +157,8 @@ CRITICAL: Your response must be ONLY the following JSON object, with no addition
         
         try:
             # Use a fresh Claude instance for synthesis to avoid token limit issues
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT_SYNTHESIZE')
-            if not system_prompt:
-                raise ValueError("LLM_SYNTHESIS_SYSTEM_PROMPT_SYNTHESIZE environment variable is not set.")
+            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT_SYNTHESIZE',
+                "You are a security expert specializing in synthesizing multiple analyses. Return ONLY JSON output with no additional text or explanation.")
             
             response = anthropic.client.messages.create(
                 model=anthropic.model,

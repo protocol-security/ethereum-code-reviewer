@@ -99,15 +99,32 @@ class ClaudeProvider(LLMProvider):
             for i, finding in enumerate(findings)
         ])
         
-        # Load prompt components from environment variables (required)
-        intro = os.getenv('LLM_SKEPTICAL_VERIFICATION_INTRO')
-        critical_questions = os.getenv('LLM_SKEPTICAL_VERIFICATION_CRITICAL_QUESTIONS')
-        be_critical = os.getenv('LLM_SKEPTICAL_VERIFICATION_BE_CRITICAL')
-        only_confirm = os.getenv('LLM_SKEPTICAL_VERIFICATION_ONLY_CONFIRM')
-        response_format = os.getenv('LLM_SKEPTICAL_VERIFICATION_RESPONSE_FORMAT')
+        # Default values (can be overridden by environment variables)
+        intro = os.getenv('LLM_SKEPTICAL_VERIFICATION_INTRO',
+            "You are a skeptical security auditor tasked with CRITICALLY reviewing and VERIFYING potential vulnerabilities.")
         
-        if not all([intro, critical_questions, be_critical, only_confirm, response_format]):
-            raise ValueError("Required LLM skeptical verification environment variables are not set. Please check your .env file.")
+        critical_questions = os.getenv('LLM_SKEPTICAL_VERIFICATION_CRITICAL_QUESTIONS',
+            "Ask yourself is this is really a vulnerability.")
+        
+        be_critical = os.getenv('LLM_SKEPTICAL_VERIFICATION_BE_CRITICAL',
+            "Keep a critical mindset.")
+        
+        only_confirm = os.getenv('LLM_SKEPTICAL_VERIFICATION_ONLY_CONFIRM',
+            "Only confirm vulnerabilities you are very sure about.")
+        
+        response_format = os.getenv('LLM_SKEPTICAL_VERIFICATION_RESPONSE_FORMAT',
+            """Return ONLY a JSON object with your verification results:
+{
+    "verified_findings": [
+        {
+            "original_index": <index of the original finding, starting from 0>,
+            "is_real_vulnerability": <true/false>,
+            "verification_confidence": <0-100>,
+            "reason": "<why you believe this is or isnt a real vulnerability>"
+        }
+    ],
+    "summary": "<brief summary of your verification>"
+}""")
         
         prompt = f"""{intro}
         
@@ -145,9 +162,8 @@ class ClaudeProvider(LLMProvider):
             return initial_result, CostInfo(0.0, 0, 0, self.model, self.get_provider_name())
         
         try:
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT_ANTHROPIC')
-            if not system_prompt:
-                raise ValueError("LLM_SYNTHESIS_SYSTEM_PROMPT_ANTHROPIC environment variable is not set.")
+            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT_ANTHROPIC',
+                "You are a skeptical security auditor. Return ONLY JSON output with no additional text or explanation.")
             
             response = self.client.messages.create(
                 model=self.model,
@@ -265,9 +281,8 @@ class ClaudeProvider(LLMProvider):
         """
         try:
             # First analysis
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT')
-            if not system_prompt:
-                raise ValueError("LLM_SYNTHESIS_SYSTEM_PROMPT environment variable is not set.")
+            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT',
+                "You are a security expert specializing in code review. Return ONLY JSON output with no additional text or explanation.")
             
             response = self.client.messages.create(
                 model=self.model,
