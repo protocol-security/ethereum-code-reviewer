@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Ethereum Security Reviewer
-        uses: protocol-security/ethereum-code-reviewer@v0.1.0
+        uses: protocol-security/ethereum-code-reviewer@0.1.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           llm-provider: 'anthropic'
