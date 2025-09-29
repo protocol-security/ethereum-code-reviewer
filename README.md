@@ -7,6 +7,7 @@ Anthropic, DeepSeek, Gemini, Llama, OpenAI
 
 ### Github Action
 You can run as a GitHub Action to have it as part of your CI/CD workflow.
+https://github.com/marketplace/actions/ethereum-security-reviewer
 
 Create a workflow in your repository, e.g., `.github/workflows/security-review.yml`, use the [security-review.yml.example](security-review.yml.example) file as an example.
 
