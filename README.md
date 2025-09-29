@@ -1,4 +1,4 @@
-# Ethereum Protocol Security Review Assistant 
+# ECR 
 
 ## Capabilities
 
