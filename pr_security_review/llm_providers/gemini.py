@@ -2,12 +2,12 @@
 Google Gemini provider implementation.
 """
 
-import os
 import json
 import re
 from typing import Dict, Tuple
 import google.generativeai as genai
 from .base import LLMProvider, CostInfo
+from ..config_loader import agent_config
 
 class GeminiProvider(LLMProvider):
     """Gemini provider for security analysis."""
@@ -84,8 +84,7 @@ class GeminiProvider(LLMProvider):
                 "response_mime_type": "application/json",
             }
             
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT',
-                "You are a security expert specializing in code review. Return ONLY JSON output with no additional text or explanation.")
+            system_prompt = agent_config.get('prompts', 'system_prompts', 'default')
             
             model = genai.GenerativeModel(
                 model_name=self.model,

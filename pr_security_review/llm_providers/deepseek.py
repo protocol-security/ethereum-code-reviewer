@@ -2,11 +2,11 @@
 Deepseek provider implementation.
 """
 
-import os
 import json
 from typing import Dict, Tuple
 from openai import OpenAI
 from .base import LLMProvider, CostInfo
+from ..config_loader import agent_config
 
 class DeepseekProvider(LLMProvider):
     """Deepseek provider for security analysis."""
@@ -90,8 +90,7 @@ class DeepseekProvider(LLMProvider):
         # context = ""
         try:
             # Prepare the messages
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT',
-                "You are a security expert specializing in code review. Return ONLY JSON output with no additional text or explanation.")
+            system_prompt = agent_config.get('prompts', 'system_prompts', 'default')
             
             messages = [
                 {

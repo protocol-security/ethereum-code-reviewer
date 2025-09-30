@@ -2,12 +2,12 @@
 OpenAI GPT provider implementation.
 """
 
-import os
 import json
 import re
 from typing import Dict, Tuple
 from openai import OpenAI
 from .base import LLMProvider, CostInfo
+from ..config_loader import agent_config
 
 class GPTProvider(LLMProvider):
     """GPT provider for security analysis."""
@@ -95,8 +95,7 @@ class GPTProvider(LLMProvider):
             - CostInfo: Cost information for the request
         """
         try:
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT',
-                "You are a security expert specializing in code review. Return ONLY JSON output with no additional text or explanation.")
+            system_prompt = agent_config.get('prompts', 'system_prompts', 'default')
             
             response = self.client.chat.completions.create(
                 model=self.model,

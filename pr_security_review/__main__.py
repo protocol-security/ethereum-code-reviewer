@@ -892,6 +892,9 @@ def main():
         # Load environment variables from .env file
         dotenv.load_dotenv()
         
+        # Import config loader after dotenv is loaded
+        from .config_loader import load_agent_config
+        
         # Fix for token loading - ensure we load the real token from .env
         env_path = os.path.join(os.getcwd(), '.env')
         if os.path.exists(env_path):
@@ -906,6 +909,8 @@ def main():
         # Parse command line arguments
         parser = argparse.ArgumentParser(description='Analyze PR or file for security vulnerabilities')
         parser.add_argument('--github-app', action='store_true', help='Run as a GitHub App webhook server', default=os.environ.get('GITHUB_APP', '').lower() in ('true', 'yes', '1'))
+        parser.add_argument('--agent', help='Path to agent configuration JSON file (defaults to agent.json if not specified)', 
+                           default=None)
         parser.add_argument('--port', type=int, default=3000, help='Port for GitHub App webhook server')
         parser.add_argument('--github-app-id', help='GitHub App ID')
         parser.add_argument('--github-private-key', help='GitHub App private key')
@@ -1029,6 +1034,9 @@ def main():
         monitor_group.add_argument('--notify-clean-commits', action='store_true', help='Send Telegram notifications for clean commits (no vulnerabilities)', default=os.environ.get('NOTIFY_CLEAN_COMMITS', '').lower() in ('true', 'yes', '1'))
         
         args = parser.parse_args()
+        
+        # Load agent configuration
+        load_agent_config(args.agent)
         
         # Set LLM prompt environment variables from command-line flags if provided
         if args.llm_security_prompt_intro:

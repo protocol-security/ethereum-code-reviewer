@@ -2,12 +2,12 @@
 Anthropic Claude provider implementation.
 """
 
-import os
 import json
 import re
 from typing import Dict, Tuple, List
 import anthropic
 from .base import LLMProvider, CostInfo
+from ..config_loader import agent_config
 
 class ClaudeProvider(LLMProvider):
     """Claude provider for security analysis."""
@@ -99,32 +99,12 @@ class ClaudeProvider(LLMProvider):
             for i, finding in enumerate(findings)
         ])
         
-        # Default values (can be overridden by environment variables)
-        intro = os.getenv('LLM_SKEPTICAL_VERIFICATION_INTRO',
-            "You are a skeptical security auditor tasked with CRITICALLY reviewing and VERIFYING potential vulnerabilities.")
-        
-        critical_questions = os.getenv('LLM_SKEPTICAL_VERIFICATION_CRITICAL_QUESTIONS',
-            "Ask yourself is this is really a vulnerability.")
-        
-        be_critical = os.getenv('LLM_SKEPTICAL_VERIFICATION_BE_CRITICAL',
-            "Keep a critical mindset.")
-        
-        only_confirm = os.getenv('LLM_SKEPTICAL_VERIFICATION_ONLY_CONFIRM',
-            "Only confirm vulnerabilities you are very sure about.")
-        
-        response_format = os.getenv('LLM_SKEPTICAL_VERIFICATION_RESPONSE_FORMAT',
-            """Return ONLY a JSON object with your verification results:
-{
-    "verified_findings": [
-        {
-            "original_index": <index of the original finding, starting from 0>,
-            "is_real_vulnerability": <true/false>,
-            "verification_confidence": <0-100>,
-            "reason": "<why you believe this is or isnt a real vulnerability>"
-        }
-    ],
-    "summary": "<brief summary of your verification>"
-}""")
+        # Load prompt components from agent configuration
+        intro = agent_config.get('prompts', 'skeptical_verification', 'intro')
+        critical_questions = agent_config.get('prompts', 'skeptical_verification', 'critical_questions')
+        be_critical = agent_config.get('prompts', 'skeptical_verification', 'be_critical')
+        only_confirm = agent_config.get('prompts', 'skeptical_verification', 'only_confirm')
+        response_format = agent_config.get('prompts', 'skeptical_verification', 'response_format')
         
         prompt = f"""{intro}
         
@@ -162,8 +142,7 @@ class ClaudeProvider(LLMProvider):
             return initial_result, CostInfo(0.0, 0, 0, self.model, self.get_provider_name())
         
         try:
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT_ANTHROPIC',
-                "You are a skeptical security auditor. Return ONLY JSON output with no additional text or explanation.")
+            system_prompt = agent_config.get('prompts', 'system_prompts', 'anthropic')
             
             response = self.client.messages.create(
                 model=self.model,
@@ -281,8 +260,7 @@ class ClaudeProvider(LLMProvider):
         """
         try:
             # First analysis
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT',
-                "You are a security expert specializing in code review. Return ONLY JSON output with no additional text or explanation.")
+            system_prompt = agent_config.get('prompts', 'system_prompts', 'default')
             
             response = self.client.messages.create(
                 model=self.model,

@@ -2,7 +2,6 @@
 Multi-LLM judge system with weighted voting.
 """
 
-import os
 import json
 from typing import Dict, Tuple, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,6 +11,7 @@ from .openai import GPTProvider
 from .gemini import GeminiProvider
 from .deepseek import DeepseekProvider
 from .llama import LlamaProvider
+from ..config_loader import agent_config
 
 
 class MultiJudgeProvider(LLMProvider):
@@ -96,9 +96,8 @@ class MultiJudgeProvider(LLMProvider):
         """Use Anthropic to synthesize a combined report from all analyses."""
         anthropic = self.providers['anthropic']
         
-        # Load synthesis intro from environment variable (with default)
-        synthesis_intro = os.getenv('LLM_SYNTHESIS_PROMPT_INTRO',
-            "You are a security expert tasked with synthesizing multiple security analyses into a single coherent report.")
+        # Load synthesis intro from agent configuration
+        synthesis_intro = agent_config.get('prompts', 'synthesis', 'intro')
         
         # Create a synthesis prompt
         synthesis_prompt = f"""{synthesis_intro}
@@ -123,8 +122,7 @@ Here are their individual analyses:
                 for finding in result['findings']:
                     synthesis_prompt += f"  * {finding['severity']}: {finding['description']}\n"
         
-        synthesis_instruction = os.getenv('LLM_SYNTHESIS_PROMPT_INSTRUCTION',
-            "Please synthesize these analyses into a single, coherent security report. Combine similar findings, use the highest confidence scores where appropriate, and create a unified summary.")
+        synthesis_instruction = agent_config.get('prompts', 'synthesis', 'instruction')
         
         synthesis_prompt += f"""
 
@@ -157,8 +155,7 @@ CRITICAL: Your response must be ONLY the following JSON object, with no addition
         
         try:
             # Use a fresh Claude instance for synthesis to avoid token limit issues
-            system_prompt = os.getenv('LLM_SYNTHESIS_SYSTEM_PROMPT_SYNTHESIZE',
-                "You are a security expert specializing in synthesizing multiple analyses. Return ONLY JSON output with no additional text or explanation.")
+            system_prompt = agent_config.get('prompts', 'system_prompts', 'synthesize')
             
             response = anthropic.client.messages.create(
                 model=anthropic.model,
