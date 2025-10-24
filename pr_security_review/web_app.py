@@ -1128,6 +1128,158 @@ class SecurityFinderApp:
                 logger.error(f"Error deleting repository {repo_name}: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
         
+        # Repository document management routes (admin only)
+        @self.app.route('/admin/repositories/<path:repo_name>/documents')
+        def admin_repository_documents(repo_name):
+            """View and manage documents for a repository (admin only)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            if not self.is_admin():
+                flash('Access denied. Admin privileges required.', 'error')
+                return redirect(url_for('index'))
+            
+            if not DATABASE_AVAILABLE:
+                flash('Database not available', 'error')
+                return redirect(url_for('admin_dashboard'))
+            
+            try:
+                db_manager = get_database_manager()
+                
+                # Verify repository exists
+                repository = db_manager.get_repository(repo_name)
+                if not repository:
+                    flash('Repository not found', 'error')
+                    return redirect(url_for('admin_dashboard'))
+                
+                # Get all documents for this repository
+                documents = db_manager.get_repository_documents(repo_name)
+                
+                return render_template('admin/repository_documents.html',
+                                     repository=repository.to_dict(),
+                                     documents=documents,
+                                     user=self.get_current_user())
+                
+            except Exception as e:
+                logger.error(f"Error loading documents for repository {repo_name}: {e}")
+                flash('Error loading documents', 'error')
+                return redirect(url_for('admin_dashboard'))
+        
+        @self.app.route('/admin/repositories/<path:repo_name>/documents/upload', methods=['POST'])
+        def admin_upload_document(repo_name):
+            """Upload a document for a repository (admin only)."""
+            if not self.is_authenticated():
+                return jsonify({'error': 'Unauthorized'}), 401
+            
+            if not self.is_admin():
+                return jsonify({'error': 'Access denied'}), 403
+            
+            if not DATABASE_AVAILABLE:
+                return jsonify({'error': 'Database not available'}), 503
+            
+            try:
+                # Check if file was uploaded
+                if 'file' not in request.files:
+                    return jsonify({'error': 'No file provided'}), 400
+                
+                file = request.files['file']
+                if file.filename == '':
+                    return jsonify({'error': 'No file selected'}), 400
+                
+                # Validate file extension
+                allowed_extensions = {'.pdf', '.txt', '.md', '.markdown'}
+                file_ext = os.path.splitext(file.filename)[1].lower()
+                if file_ext not in allowed_extensions:
+                    return jsonify({'error': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'}), 400
+                
+                # Save file temporarily
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                    file.save(temp_file.name)
+                    temp_path = temp_file.name
+                
+                try:
+                    # Read file content and generate embedding
+                    from .voyage_vector_store import get_voyage_vector_store
+                    
+                    voyage_store = get_voyage_vector_store()
+                    if not voyage_store:
+                        return jsonify({'error': 'Voyage AI not configured. Set VOYAGE_API_KEY environment variable.'}), 500
+                    
+                    # Read file content
+                    content = voyage_store.read_file_content(temp_path)
+                    
+                    # Generate embedding
+                    embedding = voyage_store.generate_embedding(content)
+                    
+                    # Get file size
+                    file_size = os.path.getsize(temp_path)
+                    
+                    # Store in database
+                    db_manager = get_database_manager()
+                    current_user = self.get_current_user()
+                    
+                    success = db_manager.create_repository_document(
+                        repository_name=repo_name,
+                        filename=file.filename,
+                        content=content,
+                        file_type=file_ext.lstrip('.'),
+                        file_size=file_size,
+                        embedding=embedding,
+                        created_by=current_user['email']
+                    )
+                    
+                    if success:
+                        return jsonify({'success': True, 'message': f'Document {file.filename} uploaded successfully'})
+                    else:
+                        return jsonify({'error': 'Failed to store document'}), 500
+                    
+                finally:
+                    # Clean up temp file
+                    try:
+                        os.unlink(temp_path)
+                    except Exception:
+                        pass
+                
+            except Exception as e:
+                logger.error(f"Error uploading document for repository {repo_name}: {e}")
+                return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+        
+        @self.app.route('/admin/repositories/<path:repo_name>/documents/<int:doc_id>/delete', methods=['POST'])
+        def admin_delete_document(repo_name, doc_id):
+            """Delete a document (admin only)."""
+            if not self.is_authenticated():
+                return jsonify({'error': 'Unauthorized'}), 401
+            
+            if not self.is_admin():
+                return jsonify({'error': 'Access denied'}), 403
+            
+            if not DATABASE_AVAILABLE:
+                return jsonify({'error': 'Database not available'}), 503
+            
+            try:
+                db_manager = get_database_manager()
+                
+                # Verify document exists and belongs to this repository
+                document = db_manager.get_repository_document(doc_id)
+                if not document:
+                    return jsonify({'error': 'Document not found'}), 404
+                
+                if document.repository_name != repo_name:
+                    return jsonify({'error': 'Document does not belong to this repository'}), 400
+                
+                # Delete the document
+                success = db_manager.delete_repository_document(doc_id)
+                
+                if success:
+                    return jsonify({'success': True, 'message': 'Document deleted successfully'})
+                else:
+                    return jsonify({'error': 'Failed to delete document'}), 500
+                
+            except Exception as e:
+                logger.error(f"Error deleting document {doc_id}: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+        
         @self.app.route('/api/admin/repositories')
         def admin_api_repositories():
             """Get all repositories (admin only)."""

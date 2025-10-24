@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Documents - {{ repository.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-6">
+        <a href="{{ url_for('admin_dashboard') }}" class="text-blue-600 hover:text-blue-800">
+            <i class="fas fa-arrow-left mr-2"></i>Back to Admin Dashboard
+        </a>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h1 class="text-3xl font-bold mb-4">
+            <i class="fas fa-file-alt mr-3"></i>Documents for {{ repository.name }}
+        </h1>
+        <p class="text-gray-600 mb-4">
+            Upload and manage documentation for vector-based context during security scans.
+        </p>
+    </div>
+
+    <!-- Upload Form -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-bold mb-4">
+            <i class="fas fa-upload mr-2"></i>Upload Document
+        </h2>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="file">
+                    Select File (PDF, TXT, MD)
+                </label>
+                <input
+                    type="file"
+                    id="file"
+                    name="file"
+                    accept=".pdf,.txt,.md,.markdown"
+                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                    required
+                />
+            </div>
+            <div class="flex items-center">
+                <button
+                    type="submit"
+                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                >
+                    <i class="fas fa-upload mr-2"></i>Upload Document
+                </button>
+                <span id="uploadStatus" class="ml-4 text-sm"></span>
+            </div>
+        </form>
+    </div>
+
+    <!-- Documents List -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold mb-4">
+            <i class="fas fa-list mr-2"></i>Uploaded Documents ({{ documents|length }})
+        </h2>
+        
+        {% if documents %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead>
+                    <tr class="bg-gray-100 border-b">
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Filename
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Type
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Size
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Uploaded
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Uploaded By
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Actions
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for doc in documents %}
+                    <tr id="doc-{{ doc.id }}">
+                        <td class="px-4 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <i class="fas fa-file-{% if doc.file_type == 'pdf' %}pdf{% elif doc.file_type == 'md' or doc.file_type == 'markdown' %}markdown{% else %}alt{% endif %} mr-2 text-gray-500"></i>
+                                <span class="font-medium">{{ doc.filename }}</span>
+                            </div>
+                        </td>
+                        <td class="px-4 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                {{ doc.file_type|upper }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ (doc.file_size / 1024) | round(1) }} KB
+                        </td>
+                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ doc.created_at[:10] }}
+                        </td>
+                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ doc.created_by }}
+                        </td>
+                        <td class="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                            <button
+                                onclick="deleteDocument({{ doc.id }}, '{{ doc.filename }}')"
+                                class="text-red-600 hover:text-red-900"
+                            >
+                                <i class="fas fa-trash mr-1"></i>Delete
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">
+            <i class="fas fa-inbox text-4xl mb-2"></i><br>
+            No documents uploaded yet. Upload documents to provide context for security scans.
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('file');
+    const statusSpan = document.getElementById('uploadStatus');
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        statusSpan.textContent = 'Please select a file';
+        statusSpan.className = 'ml-4 text-sm text-red-600';
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    // Disable button and show loading
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Uploading...';
+    statusSpan.textContent = 'Uploading and generating embeddings...';
+    statusSpan.className = 'ml-4 text-sm text-blue-600';
+    
+    try {
+        const response = await fetch('{{ url_for("admin_upload_document", repo_name=repository.name) }}', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            statusSpan.textContent = data.message;
+            statusSpan.className = 'ml-4 text-sm text-green-600';
+            fileInput.value = '';
+            
+            // Reload page after 1 second to show new document
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            statusSpan.textContent = data.error || 'Upload failed';
+            statusSpan.className = 'ml-4 text-sm text-red-600';
+        }
+    } catch (error) {
+        statusSpan.textContent = 'Error: ' + error.message;
+        statusSpan.className = 'ml-4 text-sm text-red-600';
+    } finally {
+        submitButton.disabled = false;
+        submitButton.innerHTML = '<i class="fas fa-upload mr-2"></i>Upload Document';
+    }
+});
+
+async function deleteDocument(docId, filename) {
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`{{ url_for("admin_delete_document", repo_name=repository.name, doc_id=0) }}`.replace('/0/', `/${docId}/`), {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Remove row from table
+            const row = document.getElementById(`doc-${docId}`);
+            if (row) {
+                row.remove();
+            }
+            
+            // Show success message
+            alert(data.message);
+            
+            // Reload if no more documents
+            if (document.querySelectorAll('tbody tr').length === 0) {
+                window.location.reload();
+            }
+        } else {
+            alert('Error: ' + (data.error || 'Failed to delete document'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+</script>
+
+<style>
+.container {
+    max-width: 1200px;
+}
+</style>
+{% endblock %}

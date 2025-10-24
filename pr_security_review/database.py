@@ -186,6 +186,58 @@ class FindingNote(Base):
         }
 
 
+class RepositoryDocument(Base):
+    """Database model for repository-specific documentation with embeddings."""
+    
+    __tablename__ = 'repository_documents'
+    
+    # Primary key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Repository association
+    repository_name = Column(String(255), nullable=False)  # Repository name this document belongs to
+    
+    # Document information
+    filename = Column(String(500), nullable=False)  # Original filename
+    content = Column(Text, nullable=False)  # Document text content
+    file_type = Column(String(50), nullable=False)  # File extension (pdf, md, txt)
+    file_size = Column(Integer, nullable=False)  # File size in bytes
+    
+    # Embedding information
+    embedding = Column(JSON, nullable=False)  # Vector embedding as JSON array
+    embedding_model = Column(String(100), nullable=False, default='voyage-code-3')
+    
+    # Metadata
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_by = Column(String(255), nullable=False)  # Email of user who uploaded
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    
+    # Indexing for performance
+    __table_args__ = (
+        Index('idx_repo_docs_repo_name', 'repository_name'),
+        Index('idx_repo_docs_created_at', 'created_at'),
+    )
+    
+    def __repr__(self):
+        return f"<RepositoryDocument(id={self.id}, repo={self.repository_name}, filename={self.filename})>"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': self.id,
+            'repository_name': self.repository_name,
+            'filename': self.filename,
+            'content': self.content,
+            'file_type': self.file_type,
+            'file_size': self.file_size,
+            'embedding': self.embedding,
+            'embedding_model': self.embedding_model,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by': self.created_by,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class SecurityFinding(Base):
     """Database model for security findings."""
     
@@ -1551,6 +1603,165 @@ class DatabaseManager:
             logger.error(f"Failed to migrate repositories from config: {e}")
             return False
 
+    # Repository document management methods
+    def create_repository_document(
+        self,
+        repository_name: str,
+        filename: str,
+        content: str,
+        file_type: str,
+        file_size: int,
+        embedding: List[float],
+        created_by: str,
+        embedding_model: str = 'voyage-code-3'
+    ) -> bool:
+        """
+        Create a new repository document with embedding.
+        
+        Args:
+            repository_name: Name of the repository
+            filename: Original filename
+            content: Document text content
+            file_type: File extension (pdf, md, txt)
+            file_size: File size in bytes
+            embedding: Vector embedding as list of floats
+            created_by: Email of user who uploaded
+            embedding_model: Model used for embedding
+            
+        Returns:
+            bool: True if document was created successfully, False otherwise
+        """
+        session = self.get_session()
+        try:
+            document = RepositoryDocument(
+                repository_name=repository_name,
+                filename=filename,
+                content=content,
+                file_type=file_type,
+                file_size=file_size,
+                embedding=embedding,
+                embedding_model=embedding_model,
+                created_by=created_by
+            )
+            
+            session.add(document)
+            session.commit()
+            
+            logger.info(f"Created document {filename} for repository {repository_name}")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to create document {filename}: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_repository_documents(self, repository_name: str) -> List[Dict[str, Any]]:
+        """
+        Get all documents for a repository.
+        
+        Args:
+            repository_name: Name of the repository
+            
+        Returns:
+            List of document dictionaries
+        """
+        session = self.get_session()
+        try:
+            documents = session.query(RepositoryDocument).filter(
+                RepositoryDocument.repository_name == repository_name
+            ).order_by(RepositoryDocument.created_at.desc()).all()
+            
+            return [doc.to_dict() for doc in documents]
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve documents for repository {repository_name}: {e}")
+            return []
+        finally:
+            session.close()
+
+    def get_repository_document(self, document_id: int) -> Optional[RepositoryDocument]:
+        """
+        Get a specific document by ID.
+        
+        Args:
+            document_id: ID of the document
+            
+        Returns:
+            RepositoryDocument object or None if not found
+        """
+        session = self.get_session()
+        try:
+            document = session.query(RepositoryDocument).filter(
+                RepositoryDocument.id == document_id
+            ).first()
+            
+            return document
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve document {document_id}: {e}")
+            return None
+        finally:
+            session.close()
+
+    def delete_repository_document(self, document_id: int) -> bool:
+        """
+        Delete a repository document.
+        
+        Args:
+            document_id: ID of the document to delete
+            
+        Returns:
+            bool: True if document was deleted successfully, False otherwise
+        """
+        session = self.get_session()
+        try:
+            document = session.query(RepositoryDocument).filter(
+                RepositoryDocument.id == document_id
+            ).first()
+            
+            if not document:
+                logger.warning(f"Document not found for deletion: {document_id}")
+                return False
+            
+            session.delete(document)
+            session.commit()
+            
+            logger.info(f"Deleted document {document_id} ({document.filename})")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to delete document {document_id}: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_document_count_by_repository(self, repository_name: str) -> int:
+        """
+        Get count of documents for a repository.
+        
+        Args:
+            repository_name: Name of the repository
+            
+        Returns:
+            int: Number of documents
+        """
+        session = self.get_session()
+        try:
+            count = session.query(RepositoryDocument).filter(
+                RepositoryDocument.repository_name == repository_name
+            ).count()
+            
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to get document count for repository {repository_name}: {e}")
+            return 0
+        finally:
+            session.close()
+
 
 # Global database manager instance
 _db_manager = None
@@ -1828,6 +2039,33 @@ def migrate_database_schema(db_manager: DatabaseManager):
         # Create index on is_active for performance
         """
         CREATE INDEX IF NOT EXISTS idx_repositories_is_active ON repositories(is_active);
+        """,
+        
+        # Create repository_documents table
+        """
+        CREATE TABLE IF NOT EXISTS repository_documents (
+            id SERIAL PRIMARY KEY,
+            repository_name VARCHAR(255) NOT NULL,
+            filename VARCHAR(500) NOT NULL,
+            content TEXT NOT NULL,
+            file_type VARCHAR(50) NOT NULL,
+            file_size INTEGER NOT NULL,
+            embedding JSON NOT NULL,
+            embedding_model VARCHAR(100) NOT NULL DEFAULT 'voyage-code-3',
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            created_by VARCHAR(255) NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+        """,
+        
+        # Create index on repository_name for performance
+        """
+        CREATE INDEX IF NOT EXISTS idx_repo_docs_repo_name ON repository_documents(repository_name);
+        """,
+        
+        # Create index on created_at for performance
+        """
+        CREATE INDEX IF NOT EXISTS idx_repo_docs_created_at ON repository_documents(created_at);
         """
     ]
     

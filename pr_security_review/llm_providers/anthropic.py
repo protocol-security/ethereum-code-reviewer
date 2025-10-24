@@ -245,13 +245,14 @@ class ClaudeProvider(LLMProvider):
             # Return original result if verification completely fails
             return initial_result, CostInfo(0.0, 0, 0, self.model, self.get_provider_name())
         
-    def analyze_security(self, code_changes: str, context: str = "") -> Tuple[Dict, CostInfo]:
+    def analyze_security(self, code_changes: str, context: str = "", repo_name: str = "") -> Tuple[Dict, CostInfo]:
         """
         Analyze code changes using Claude with double-check verification for findings.
         
         Args:
             code_changes: String containing the code changes to analyze
             context: Optional context from vulnerability documentation
+            repo_name: Repository name for fetching relevant documents
             
         Returns:
             Tuple containing:
@@ -259,6 +260,53 @@ class ClaudeProvider(LLMProvider):
             - CostInfo: Total cost information for all requests
         """
         try:
+            # Fetch relevant documents from Voyage vector store if available
+            voyage_context = ""
+            if repo_name:
+                try:
+                    from ..database import get_database_manager
+                    from ..voyage_vector_store import get_voyage_vector_store
+                    
+                    voyage_store = get_voyage_vector_store()
+                    if voyage_store:
+                        # Get repository documents
+                        db_manager = get_database_manager()
+                        documents = db_manager.get_repository_documents(repo_name)
+                        
+                        if documents:
+                            # Prepare document embeddings for search
+                            doc_embeddings = []
+                            for doc in documents:
+                                doc_embeddings.append({
+                                    'id': doc['id'],
+                                    'filename': doc['filename'],
+                                    'content': doc['content'],
+                                    'embedding': doc['embedding']
+                                })
+                            
+                            # Search for relevant documents
+                            relevant_docs = voyage_store.search_similar_documents(
+                                query_text=code_changes,
+                                document_embeddings=doc_embeddings,
+                                top_k=3,
+                                min_similarity=0.5
+                            )
+                            
+                            if relevant_docs:
+                                voyage_context = voyage_store.format_context_for_llm(relevant_docs)
+                                print(f"Found {len(relevant_docs)} relevant documents for context")
+                except Exception as e:
+                    print(f"Failed to fetch Voyage context: {e}")
+                    # Continue without Voyage context
+            
+            # Combine contexts
+            combined_context = context
+            if voyage_context:
+                if combined_context:
+                    combined_context += "\n\n" + voyage_context
+                else:
+                    combined_context = voyage_context
+            
             # First analysis
             system_prompt = agent_config.get('prompts', 'system_prompts', 'default')
             
@@ -269,7 +317,7 @@ class ClaudeProvider(LLMProvider):
                 system=system_prompt,
                 messages=[{
                     "role": "user",
-                    "content": self.get_security_prompt(code_changes, context)
+                    "content": self.get_security_prompt(code_changes, combined_context)
                 }]
             )
             
