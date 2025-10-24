@@ -115,7 +115,8 @@ class SecurityFinderApp:
                     'updated_by': repo.get('updated_by')
                 })
             
-            return sorted(repo_list, key=lambda x: x['name'].lower())
+            # Sort by active status first (active=True first), then by name
+            return sorted(repo_list, key=lambda x: (not x.get('is_active', True), x['name'].lower()))
             
         except Exception as e:
             logger.warning(f"Could not load repositories from database: {e}")
@@ -1278,6 +1279,51 @@ class SecurityFinderApp:
                 
             except Exception as e:
                 logger.error(f"Error deleting document {doc_id}: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+        
+        @self.app.route('/admin/repositories/<path:repo_name>/toggle-status', methods=['POST'])
+        def admin_toggle_repository_status(repo_name):
+            """Toggle repository active status (admin only)."""
+            if not self.is_authenticated():
+                return jsonify({'error': 'Unauthorized'}), 401
+            
+            if not self.is_admin():
+                return jsonify({'error': 'Access denied'}), 403
+            
+            if not DATABASE_AVAILABLE:
+                return jsonify({'error': 'Database not available'}), 503
+            
+            try:
+                db_manager = get_database_manager()
+                current_user = self.get_current_user()
+                
+                # Get current repository status
+                repository = db_manager.get_repository(repo_name)
+                if not repository:
+                    return jsonify({'error': 'Repository not found'}), 404
+                
+                # Toggle the status
+                new_status = not repository.is_active
+                
+                # Update repository
+                success = db_manager.update_repository(
+                    name=repo_name,
+                    is_active=new_status,
+                    updated_by=current_user['email']
+                )
+                
+                if success:
+                    status_text = 'active' if new_status else 'inactive'
+                    return jsonify({
+                        'success': True, 
+                        'message': f'Repository {repo_name} is now {status_text}',
+                        'is_active': new_status
+                    })
+                else:
+                    return jsonify({'error': 'Failed to update repository status'}), 500
+                
+            except Exception as e:
+                logger.error(f"Error toggling repository status {repo_name}: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
         
         @self.app.route('/api/admin/repositories')

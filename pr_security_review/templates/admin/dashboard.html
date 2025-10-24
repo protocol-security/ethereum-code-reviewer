@@ -399,7 +399,10 @@
                         </div>
                     </td>
                     <td>
-                        <span class="badge {{ 'active' if repo.is_active else 'inactive' }}">
+                        <span class="badge {{ 'active' if repo.is_active else 'inactive' }}" 
+                              style="cursor: pointer;" 
+                              onclick="toggleRepositoryStatus('{{ repo.name }}', {{ 'true' if repo.is_active else 'false' }})"
+                              title="Click to toggle status">
                             <i class="fas fa-{{ 'check' if repo.is_active else 'times' }}"></i>
                             {{ 'Active' if repo.is_active else 'Inactive' }}
                         </span>
@@ -622,6 +625,32 @@ function deleteRepository(repoName) {
         .catch(error => {
             console.error('Error:', error);
             alert('Error deleting repository');
+        });
+    }
+}
+
+function toggleRepositoryStatus(repoName, currentStatus) {
+    const newStatusText = currentStatus ? 'inactive' : 'active';
+    const confirmMsg = 'Are you sure you want to mark repository ' + repoName + ' as ' + newStatusText + '?';
+    
+    if (confirm(confirmMsg)) {
+        fetch('/admin/repositories/' + encodeURIComponent(repoName) + '/toggle-status', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error toggling repository status: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error toggling repository status');
         });
     }
 }
