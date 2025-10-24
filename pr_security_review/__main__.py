@@ -1020,6 +1020,7 @@ def main():
         
         # Commit monitoring arguments
         monitor_group = parser.add_argument_group('commit monitoring')
+        monitor_group.add_argument('--config-file', help='Path to configuration file for commit monitoring (optional)', default=None)
         monitor_group.add_argument('--monitor-add', metavar='URL', help='Add a repository to monitor (e.g., https://github.com/owner/repo)')
         monitor_group.add_argument('--monitor-branches', nargs='+', default=['main', 'master'], help='Branches to monitor (default: main master)')
         monitor_group.add_argument('--monitor-remove', metavar='URL', help='Remove a repository from monitoring')
@@ -1293,8 +1294,8 @@ def main():
                 print("Error: GitHub token required for commit monitoring")
                 sys.exit(1)
                 
-            # Initialize commit monitor with config file if specified
-            config_file = args.config_file
+            # Initialize commit monitor with config file if specified (use getattr for safety)
+            config_file = getattr(args, 'config_file', None)
             monitor = CommitMonitor(github_token, config_file=config_file)
             
             # Handle monitor commands
