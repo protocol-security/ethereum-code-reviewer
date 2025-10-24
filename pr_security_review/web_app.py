@@ -97,7 +97,7 @@ class SecurityFinderApp:
         
         try:
             db_manager = get_database_manager()
-            repositories = db_manager.get_all_repositories()
+            repositories = db_manager.get_all_repositories(include_inactive=True)
             
             # Convert database format to expected format
             repo_list = []
