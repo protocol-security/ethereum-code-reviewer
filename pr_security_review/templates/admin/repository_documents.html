@@ -2,8 +2,38 @@
 
 {% block title %}Documents - {{ repository.name }}{% endblock %}
 
-{% block content %}
+{% block extra_head %}
 <style>
+.form-container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.page-header {
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.page-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1a202c;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.page-header p {
+    color: #718096;
+    font-size: 1rem;
+}
+
+.back-button {
+    margin-bottom: 2rem;
+}
+
 .upload-area {
     border: 3px dashed #cbd5e0;
     border-radius: 12px;
@@ -22,7 +52,7 @@
 }
 
 .upload-icon {
-    font-size: 4rem;
+    font-size: 3.5rem;
     color: #667eea;
     margin-bottom: 1rem;
     transition: all 0.3s ease;
@@ -34,7 +64,7 @@
 }
 
 .upload-text {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: #2d3748;
     margin-bottom: 0.5rem;
@@ -156,10 +186,11 @@
 }
 
 .btn-upload-all {
+    flex: 1;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border: none;
-    padding: 0.75rem 2rem;
+    padding: 0.875rem 2rem;
     border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
@@ -167,6 +198,7 @@
     font-size: 1rem;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
 }
 
@@ -185,7 +217,7 @@
     background: white;
     color: #2d3748;
     border: 2px solid #e2e8f0;
-    padding: 0.75rem 2rem;
+    padding: 0.875rem 2rem;
     border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
@@ -198,66 +230,111 @@
     background: #f7fafc;
 }
 
-.documents-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-    margin-top: 2rem;
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 
-.document-card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+.section-title i {
+    color: #667eea;
+}
+
+.search-container {
+    margin-bottom: 1.5rem;
+}
+
+.search-input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%23718096' viewBox='0 0 24 24'%3E%3Cpath d='M21.71 20.29l-5.4-5.4a7.92 7.92 0 10-1.41 1.41l5.4 5.4a1 1 0 001.41-1.41zM4 10a6 6 0 1112 0 6 6 0 01-12 0z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 0.75rem center;
+    background-size: 1.25rem;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.documents-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.documents-table thead th {
+    background: #f7fafc;
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #4a5568;
+    border-bottom: 2px solid #e2e8f0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.documents-table tbody tr {
     transition: all 0.2s;
 }
 
-.document-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
+.documents-table tbody tr:hover {
+    background: #f7fafc;
 }
 
-.document-icon {
-    font-size: 3rem;
+.documents-table tbody td {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+}
+
+.doc-icon {
+    font-size: 1.5rem;
     color: #667eea;
-    margin-bottom: 1rem;
+    width: 2rem;
 }
 
-.document-name {
-    font-weight: 600;
+.doc-name {
+    font-weight: 500;
     color: #2d3748;
-    margin-bottom: 0.5rem;
     word-break: break-word;
 }
 
-.document-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
-}
-
-.document-meta-item {
-    font-size: 0.875rem;
-    color: #718096;
-}
-
-.document-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 1rem;
-    border-top: 1px solid #e2e8f0;
-}
-
-.document-type {
+.doc-type-badge {
+    display: inline-block;
     background: #edf2f7;
     color: #4a5568;
     padding: 0.25rem 0.75rem;
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 600;
+    text-transform: uppercase;
+}
+
+.doc-size {
+    color: #718096;
+    font-size: 0.875rem;
+}
+
+.doc-date {
+    color: #718096;
+    font-size: 0.875rem;
+}
+
+.doc-user {
+    color: #718096;
+    font-size: 0.875rem;
 }
 
 .btn-delete-doc {
@@ -267,120 +344,176 @@
     padding: 0.5rem 1rem;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 500;
 }
 
 .btn-delete-doc:hover {
     background: #e53e3e;
 }
 
+.doc-count {
+    color: #718096;
+    font-size: 0.875rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
 .empty-state {
     text-align: center;
-    padding: 4rem 2rem;
+    padding: 3rem 2rem;
     color: #718096;
 }
 
 .empty-state-icon {
-    font-size: 4rem;
+    font-size: 3.5rem;
     color: #cbd5e0;
     margin-bottom: 1rem;
 }
-</style>
 
-<div class="container mx-auto px-4 py-8" style="max-width: 1200px;">
-    <div class="mb-6">
-        <a href="{{ url_for('admin_dashboard') }}" class="text-blue-600 hover:text-blue-800 inline-flex items-center gap-2">
+.empty-state h3 {
+    font-size: 1.125rem;
+    color: #4a5568;
+    margin-bottom: 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <!-- Header -->
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-file-alt"></i>
+            Repository Documents
+        </h1>
+        <p>Manage documentation for <strong>{{ repository.name }}</strong></p>
+    </div>
+
+    <!-- Back Button -->
+    <div class="back-button">
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i>
             Back to Admin Dashboard
         </a>
     </div>
 
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h1 class="text-3xl font-bold mb-2 flex items-center gap-3">
-            <i class="fas fa-file-alt text-blue-600"></i>
-            Documents for {{ repository.name }}
-        </h1>
-        <p class="text-gray-600">
-            Upload documentation to provide vector-based context during security scans. Supported formats: PDF, TXT, MD
-        </p>
-    </div>
-
     <!-- Upload Section -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-            <i class="fas fa-cloud-upload-alt text-blue-600"></i>
-            Upload Documents
-        </h2>
-        
-        <div class="upload-area" id="uploadArea">
-            <i class="fas fa-cloud-upload-alt upload-icon"></i>
-            <div class="upload-text">Drag & Drop Files Here</div>
-            <div class="upload-hint">or click to browse (PDF, TXT, MD supported)</div>
-            <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.md,.markdown" multiple>
-        </div>
+    <div class="card" style="margin-bottom: 2rem;">
+        <div class="card-content">
+            <div class="section-title">
+                <i class="fas fa-cloud-upload-alt"></i>
+                Upload Documents
+            </div>
+            
+            <div class="upload-area" id="uploadArea">
+                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                <div class="upload-text">Drag & Drop Files Here</div>
+                <div class="upload-hint">or click to browse • Supports: PDF, TXT, MD • Multiple files allowed</div>
+                <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.md,.markdown" multiple>
+            </div>
 
-        <div id="fileQueue" class="file-queue" style="display: none;"></div>
+            <div id="fileQueue" class="file-queue" style="display: none;"></div>
 
-        <div id="uploadActions" class="upload-actions" style="display: none;">
-            <button id="uploadAllBtn" class="btn-upload-all">
-                <i class="fas fa-upload"></i>
-                Upload All Files
-            </button>
-            <button id="clearAllBtn" class="btn-clear-all">
-                <i class="fas fa-times"></i>
-                Clear All
-            </button>
+            <div id="uploadActions" class="upload-actions" style="display: none;">
+                <button id="uploadAllBtn" class="btn-upload-all">
+                    <i class="fas fa-upload"></i>
+                    Upload All Files
+                </button>
+                <button id="clearAllBtn" class="btn-clear-all">
+                    <i class="fas fa-times"></i>
+                    Clear Queue
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Documents List -->
-    <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-            <i class="fas fa-folder-open text-blue-600"></i>
-            Uploaded Documents ({{ documents|length }})
-        </h2>
-        
-        {% if documents %}
-        <div class="documents-grid">
-            {% for doc in documents %}
-            <div class="document-card" id="doc-{{ doc.id }}">
-                <div class="document-icon">
-                    <i class="fas fa-file-{% if doc.file_type == 'pdf' %}pdf{% elif doc.file_type == 'md' or doc.file_type == 'markdown' %}markdown{% else %}alt{% endif %}"></i>
-                </div>
-                <div class="document-name">{{ doc.filename }}</div>
-                <div class="document-meta">
-                    <div class="document-meta-item">
-                        <i class="fas fa-weight"></i> {{ (doc.file_size / 1024) | round(1) }} KB
-                    </div>
-                    <div class="document-meta-item">
-                        <i class="fas fa-calendar"></i> {{ doc.created_at[:10] }}
-                    </div>
-                    <div class="document-meta-item">
-                        <i class="fas fa-user"></i> {{ doc.created_by }}
-                    </div>
-                </div>
-                <div class="document-actions">
-                    <span class="document-type">{{ doc.file_type|upper }}</span>
-                    <button onclick="deleteDocument({{ doc.id }}, '{{ doc.filename }}')" class="btn-delete-doc">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
+    <div class="card">
+        <div class="card-content">
+            <div class="section-title">
+                <i class="fas fa-folder-open"></i>
+                Uploaded Documents ({{ documents|length }})
             </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <div class="empty-state-icon">
-                <i class="fas fa-inbox"></i>
+            
+            {% if documents %}
+            <div class="search-container">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    class="search-input" 
+                    placeholder="Search documents by filename, type, or uploader..."
+                />
             </div>
-            <h3 class="text-xl font-semibold text-gray-700 mb-2">No Documents Yet</h3>
-            <p>Upload documents to provide context for security scans</p>
+            
+            <div style="overflow-x: auto;">
+                <table class="documents-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;"></th>
+                            <th>Filename</th>
+                            <th style="width: 80px;">Type</th>
+                            <th style="width: 90px;">Size</th>
+                            <th style="width: 110px;">Uploaded</th>
+                            <th style="width: 180px;">Uploaded By</th>
+                            <th style="width: 90px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for doc in documents %}
+                        <tr id="doc-{{ doc.id }}" class="doc-row">
+                            <td>
+                                <i class="fas fa-file-{% if doc.file_type == 'pdf' %}pdf{% elif doc.file_type == 'md' or doc.file_type == 'markdown' %}markdown{% else %}alt{% endif %} doc-icon"></i>
+                            </td>
+                            <td>
+                                <div class="doc-name">{{ doc.filename }}</div>
+                            </td>
+                            <td>
+                                <span class="doc-type-badge">{{ doc.file_type|upper }}</span>
+                            </td>
+                            <td>
+                                <span class="doc-size">{{ (doc.file_size / 1024) | round(1) }} KB</span>
+                            </td>
+                            <td>
+                                <span class="doc-date">{{ doc.created_at[:10] }}</span>
+                            </td>
+                            <td>
+                                <span class="doc-user">{{ doc.created_by }}</span>
+                            </td>
+                            <td>
+                                <button onclick="deleteDocument({{ doc.id }}, '{{ doc.filename }}')" class="btn-delete-doc">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="doc-count">
+                Showing <span id="visibleCount">{{ documents|length }}</span> of {{ documents|length }} documents
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fas fa-inbox"></i>
+                </div>
+                <h3>No Documents Uploaded</h3>
+                <p>Upload documents to provide vector-based context for security scans</p>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 </div>
+{% endblock %}
 
+{% block extra_scripts %}
 <script>
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
@@ -418,7 +551,7 @@ function handleFiles(files) {
         // Check file extension
         const ext = file.name.split('.').pop().toLowerCase();
         if (!['pdf', 'txt', 'md', 'markdown'].includes(ext)) {
-            alert(`File "${file.name}" has unsupported format. Only PDF, TXT, and MD files are allowed.`);
+            alert('File "' + file.name + '" has unsupported format. Only PDF, TXT, and MD files are allowed.');
             continue;
         }
         
@@ -448,35 +581,32 @@ function updateFileQueue() {
     fileQueue.style.display = 'block';
     uploadActions.style.display = 'flex';
     
-    fileQueue.innerHTML = filesToUpload.map((item, index) => `
-        <div class="file-item" data-index="${index}">
-            <div class="file-item-info">
-                <div class="file-item-icon">
-                    <i class="fas fa-file-${getFileIcon(item.file.name)}"></i>
-                </div>
-                <div class="file-item-details">
-                    <div class="file-item-name">${item.file.name}</div>
-                    <div class="file-item-size">${(item.file.size / 1024).toFixed(1)} KB</div>
-                    ${item.status !== 'pending' ? `
-                        <div class="file-item-progress">
-                            <div class="file-item-progress-bar" style="width: ${item.progress || 0}%"></div>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-            ${item.status === 'pending' ? `
-                <button class="file-item-remove" onclick="removeFile(${index})">
-                    <i class="fas fa-times"></i>
-                </button>
-            ` : `
-                <span class="file-item-status status-${item.status}">
-                    ${item.status === 'uploading' ? '<i class="fas fa-spinner fa-spin"></i> Uploading' : 
-                      item.status === 'success' ? '<i class="fas fa-check"></i> Success' : 
-                      '<i class="fas fa-exclamation-triangle"></i> Error'}
-                </span>
-            `}
-        </div>
-    `).join('');
+    fileQueue.innerHTML = filesToUpload.map((item, index) => {
+        const icon = getFileIcon(item.file.name);
+        const statusHtml = item.status === 'pending' ? 
+            '<button class="file-item-remove" onclick="removeFile(' + index + ')"><i class="fas fa-times"></i></button>' :
+            '<span class="file-item-status status-' + item.status + '">' +
+                (item.status === 'uploading' ? '<i class="fas fa-spinner fa-spin"></i> Uploading' :
+                 item.status === 'success' ? '<i class="fas fa-check"></i> Success' :
+                 '<i class="fas fa-exclamation-triangle"></i> Error') +
+            '</span>';
+        
+        const progressHtml = item.status !== 'pending' ?
+            '<div class="file-item-progress"><div class="file-item-progress-bar" style="width: ' + (item.progress || 0) + '%"></div></div>' :
+            '';
+        
+        return '<div class="file-item" data-index="' + index + '">' +
+            '<div class="file-item-info">' +
+                '<div class="file-item-icon"><i class="fas fa-file-' + icon + '"></i></div>' +
+                '<div class="file-item-details">' +
+                    '<div class="file-item-name">' + item.file.name + '</div>' +
+                    '<div class="file-item-size">' + (item.file.size / 1024).toFixed(1) + ' KB</div>' +
+                    progressHtml +
+                '</div>' +
+            '</div>' +
+            statusHtml +
+        '</div>';
+    }).join('');
 }
 
 function getFileIcon(filename) {
@@ -554,21 +684,51 @@ uploadAllBtn.addEventListener('click', async () => {
     }
 });
 
+// Search functionality
+const searchInput = document.getElementById('searchInput');
+if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const rows = document.querySelectorAll('.doc-row');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            const filename = row.querySelector('.doc-name').textContent.toLowerCase();
+            const user = row.querySelector('.doc-user').textContent.toLowerCase();
+            const type = row.querySelector('.doc-type-badge').textContent.toLowerCase();
+            
+            if (filename.includes(searchTerm) || user.includes(searchTerm) || type.includes(searchTerm)) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        
+        document.getElementById('visibleCount').textContent = visibleCount;
+    });
+}
+
 async function deleteDocument(docId, filename) {
-    if (!confirm(`Delete "${filename}"?`)) return;
+    if (!confirm('Delete "' + filename + '"?')) return;
     
     try {
-        const response = await fetch(`{{ url_for("admin_delete_document", repo_name=repository.name, doc_id=0) }}`.replace('/0/', `/${docId}/`), {
+        const response = await fetch('{{ url_for("admin_delete_document", repo_name=repository.name, doc_id=0) }}'.replace('/0/', '/' + docId + '/'), {
             method: 'POST'
         });
         
         const data = await response.json();
         
         if (response.ok && data.success) {
-            document.getElementById(`doc-${docId}`).remove();
+            document.getElementById('doc-' + docId).remove();
             
-            if (document.querySelectorAll('.document-card').length === 0) {
+            if (document.querySelectorAll('.doc-row').length === 0) {
                 window.location.reload();
+            } else {
+                // Update counters
+                const totalCount = document.querySelectorAll('.doc-row').length;
+                document.querySelector('.section-title').innerHTML = '<i class="fas fa-folder-open"></i>Uploaded Documents (' + totalCount + ')';
+                document.getElementById('visibleCount').textContent = document.querySelectorAll('.doc-row:not([style*="display: none"])').length;
             }
         } else {
             alert('Error: ' + (data.error || 'Failed to delete'));
