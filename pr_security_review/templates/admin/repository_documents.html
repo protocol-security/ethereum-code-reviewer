@@ -3,186 +3,559 @@
 {% block title %}Documents - {{ repository.name }}{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+<style>
+.upload-area {
+    border: 3px dashed #cbd5e0;
+    border-radius: 12px;
+    padding: 3rem;
+    text-align: center;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+}
+
+.upload-area.drag-over {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #e6fffa 0%, #d4e9ff 100%);
+    transform: scale(1.02);
+}
+
+.upload-icon {
+    font-size: 4rem;
+    color: #667eea;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+}
+
+.upload-area.drag-over .upload-icon {
+    transform: scale(1.2);
+    color: #48bb78;
+}
+
+.upload-text {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 0.5rem;
+}
+
+.upload-hint {
+    color: #718096;
+    font-size: 0.875rem;
+}
+
+.file-input {
+    display: none;
+}
+
+.file-queue {
+    margin-top: 1.5rem;
+}
+
+.file-item {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s;
+}
+
+.file-item:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.file-item-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+}
+
+.file-item-icon {
+    font-size: 2rem;
+    color: #667eea;
+}
+
+.file-item-details {
+    flex: 1;
+}
+
+.file-item-name {
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 0.25rem;
+}
+
+.file-item-size {
+    font-size: 0.875rem;
+    color: #718096;
+}
+
+.file-item-progress {
+    width: 100%;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+.file-item-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #48bb78 100%);
+    transition: width 0.3s ease;
+}
+
+.file-item-status {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+}
+
+.status-uploading {
+    background: #bee3f8;
+    color: #2c5282;
+}
+
+.status-success {
+    background: #c6f6d5;
+    color: #22543d;
+}
+
+.status-error {
+    background: #fed7d7;
+    color: #742a2a;
+}
+
+.file-item-remove {
+    background: #fc8181;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+    margin-left: 1rem;
+}
+
+.file-item-remove:hover {
+    background: #e53e3e;
+}
+
+.upload-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn-upload-all {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-upload-all:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-upload-all:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-clear-all {
+    background: white;
+    color: #2d3748;
+    border: 2px solid #e2e8f0;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 1rem;
+}
+
+.btn-clear-all:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+.documents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.document-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s;
+}
+
+.document-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.document-icon {
+    font-size: 3rem;
+    color: #667eea;
+    margin-bottom: 1rem;
+}
+
+.document-name {
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 0.5rem;
+    word-break: break-word;
+}
+
+.document-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.document-meta-item {
+    font-size: 0.875rem;
+    color: #718096;
+}
+
+.document-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+.document-type {
+    background: #edf2f7;
+    color: #4a5568;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.btn-delete-doc {
+    background: #fc8181;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.btn-delete-doc:hover {
+    background: #e53e3e;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #718096;
+}
+
+.empty-state-icon {
+    font-size: 4rem;
+    color: #cbd5e0;
+    margin-bottom: 1rem;
+}
+</style>
+
+<div class="container mx-auto px-4 py-8" style="max-width: 1200px;">
     <div class="mb-6">
-        <a href="{{ url_for('admin_dashboard') }}" class="text-blue-600 hover:text-blue-800">
-            <i class="fas fa-arrow-left mr-2"></i>Back to Admin Dashboard
+        <a href="{{ url_for('admin_dashboard') }}" class="text-blue-600 hover:text-blue-800 inline-flex items-center gap-2">
+            <i class="fas fa-arrow-left"></i>
+            Back to Admin Dashboard
         </a>
     </div>
 
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h1 class="text-3xl font-bold mb-4">
-            <i class="fas fa-file-alt mr-3"></i>Documents for {{ repository.name }}
+        <h1 class="text-3xl font-bold mb-2 flex items-center gap-3">
+            <i class="fas fa-file-alt text-blue-600"></i>
+            Documents for {{ repository.name }}
         </h1>
-        <p class="text-gray-600 mb-4">
-            Upload and manage documentation for vector-based context during security scans.
+        <p class="text-gray-600">
+            Upload documentation to provide vector-based context during security scans. Supported formats: PDF, TXT, MD
         </p>
     </div>
 
-    <!-- Upload Form -->
+    <!-- Upload Section -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 class="text-xl font-bold mb-4">
-            <i class="fas fa-upload mr-2"></i>Upload Document
+        <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+            <i class="fas fa-cloud-upload-alt text-blue-600"></i>
+            Upload Documents
         </h2>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="file">
-                    Select File (PDF, TXT, MD)
-                </label>
-                <input
-                    type="file"
-                    id="file"
-                    name="file"
-                    accept=".pdf,.txt,.md,.markdown"
-                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    required
-                />
-            </div>
-            <div class="flex items-center">
-                <button
-                    type="submit"
-                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                >
-                    <i class="fas fa-upload mr-2"></i>Upload Document
-                </button>
-                <span id="uploadStatus" class="ml-4 text-sm"></span>
-            </div>
-        </form>
+        
+        <div class="upload-area" id="uploadArea">
+            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+            <div class="upload-text">Drag & Drop Files Here</div>
+            <div class="upload-hint">or click to browse (PDF, TXT, MD supported)</div>
+            <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.md,.markdown" multiple>
+        </div>
+
+        <div id="fileQueue" class="file-queue" style="display: none;"></div>
+
+        <div id="uploadActions" class="upload-actions" style="display: none;">
+            <button id="uploadAllBtn" class="btn-upload-all">
+                <i class="fas fa-upload"></i>
+                Upload All Files
+            </button>
+            <button id="clearAllBtn" class="btn-clear-all">
+                <i class="fas fa-times"></i>
+                Clear All
+            </button>
+        </div>
     </div>
 
     <!-- Documents List -->
     <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-bold mb-4">
-            <i class="fas fa-list mr-2"></i>Uploaded Documents ({{ documents|length }})
+        <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+            <i class="fas fa-folder-open text-blue-600"></i>
+            Uploaded Documents ({{ documents|length }})
         </h2>
         
         {% if documents %}
-        <div class="overflow-x-auto">
-            <table class="min-w-full">
-                <thead>
-                    <tr class="bg-gray-100 border-b">
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Filename
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Type
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Size
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Uploaded
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Uploaded By
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Actions
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for doc in documents %}
-                    <tr id="doc-{{ doc.id }}">
-                        <td class="px-4 py-4 whitespace-nowrap">
-                            <div class="flex items-center">
-                                <i class="fas fa-file-{% if doc.file_type == 'pdf' %}pdf{% elif doc.file_type == 'md' or doc.file_type == 'markdown' %}markdown{% else %}alt{% endif %} mr-2 text-gray-500"></i>
-                                <span class="font-medium">{{ doc.filename }}</span>
-                            </div>
-                        </td>
-                        <td class="px-4 py-4 whitespace-nowrap">
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                {{ doc.file_type|upper }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ (doc.file_size / 1024) | round(1) }} KB
-                        </td>
-                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ doc.created_at[:10] }}
-                        </td>
-                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ doc.created_by }}
-                        </td>
-                        <td class="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                                onclick="deleteDocument({{ doc.id }}, '{{ doc.filename }}')"
-                                class="text-red-600 hover:text-red-900"
-                            >
-                                <i class="fas fa-trash mr-1"></i>Delete
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="documents-grid">
+            {% for doc in documents %}
+            <div class="document-card" id="doc-{{ doc.id }}">
+                <div class="document-icon">
+                    <i class="fas fa-file-{% if doc.file_type == 'pdf' %}pdf{% elif doc.file_type == 'md' or doc.file_type == 'markdown' %}markdown{% else %}alt{% endif %}"></i>
+                </div>
+                <div class="document-name">{{ doc.filename }}</div>
+                <div class="document-meta">
+                    <div class="document-meta-item">
+                        <i class="fas fa-weight"></i> {{ (doc.file_size / 1024) | round(1) }} KB
+                    </div>
+                    <div class="document-meta-item">
+                        <i class="fas fa-calendar"></i> {{ doc.created_at[:10] }}
+                    </div>
+                    <div class="document-meta-item">
+                        <i class="fas fa-user"></i> {{ doc.created_by }}
+                    </div>
+                </div>
+                <div class="document-actions">
+                    <span class="document-type">{{ doc.file_type|upper }}</span>
+                    <button onclick="deleteDocument({{ doc.id }}, '{{ doc.filename }}')" class="btn-delete-doc">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
         </div>
         {% else %}
-        <p class="text-gray-500 text-center py-8">
-            <i class="fas fa-inbox text-4xl mb-2"></i><br>
-            No documents uploaded yet. Upload documents to provide context for security scans.
-        </p>
+        <div class="empty-state">
+            <div class="empty-state-icon">
+                <i class="fas fa-inbox"></i>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-700 mb-2">No Documents Yet</h3>
+            <p>Upload documents to provide context for security scans</p>
+        </div>
         {% endif %}
     </div>
 </div>
 
 <script>
-document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const fileQueue = document.getElementById('fileQueue');
+const uploadActions = document.getElementById('uploadActions');
+const uploadAllBtn = document.getElementById('uploadAllBtn');
+const clearAllBtn = document.getElementById('clearAllBtn');
+
+let filesToUpload = [];
+
+// Drag and drop handlers
+uploadArea.addEventListener('click', () => fileInput.click());
+
+uploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
+    uploadArea.classList.add('drag-over');
+});
+
+uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('drag-over');
+});
+
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+});
+
+fileInput.addEventListener('change', (e) => {
+    handleFiles(e.target.files);
+});
+
+function handleFiles(files) {
+    for (const file of files) {
+        // Check file extension
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['pdf', 'txt', 'md', 'markdown'].includes(ext)) {
+            alert(`File "${file.name}" has unsupported format. Only PDF, TXT, and MD files are allowed.`);
+            continue;
+        }
+        
+        // Check if file already in queue
+        if (filesToUpload.some(f => f.name === file.name && f.size === file.size)) {
+            continue;
+        }
+        
+        filesToUpload.push({
+            file: file,
+            status: 'pending',
+            id: Date.now() + Math.random()
+        });
+    }
     
-    const fileInput = document.getElementById('file');
-    const statusSpan = document.getElementById('uploadStatus');
-    const submitButton = e.target.querySelector('button[type="submit"]');
-    
-    if (!fileInput.files || fileInput.files.length === 0) {
-        statusSpan.textContent = 'Please select a file';
-        statusSpan.className = 'ml-4 text-sm text-red-600';
+    updateFileQueue();
+    fileInput.value = '';
+}
+
+function updateFileQueue() {
+    if (filesToUpload.length === 0) {
+        fileQueue.style.display = 'none';
+        uploadActions.style.display = 'none';
         return;
     }
     
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
+    fileQueue.style.display = 'block';
+    uploadActions.style.display = 'flex';
     
-    // Disable button and show loading
-    submitButton.disabled = true;
-    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Uploading...';
-    statusSpan.textContent = 'Uploading and generating embeddings...';
-    statusSpan.className = 'ml-4 text-sm text-blue-600';
+    fileQueue.innerHTML = filesToUpload.map((item, index) => `
+        <div class="file-item" data-index="${index}">
+            <div class="file-item-info">
+                <div class="file-item-icon">
+                    <i class="fas fa-file-${getFileIcon(item.file.name)}"></i>
+                </div>
+                <div class="file-item-details">
+                    <div class="file-item-name">${item.file.name}</div>
+                    <div class="file-item-size">${(item.file.size / 1024).toFixed(1)} KB</div>
+                    ${item.status !== 'pending' ? `
+                        <div class="file-item-progress">
+                            <div class="file-item-progress-bar" style="width: ${item.progress || 0}%"></div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+            ${item.status === 'pending' ? `
+                <button class="file-item-remove" onclick="removeFile(${index})">
+                    <i class="fas fa-times"></i>
+                </button>
+            ` : `
+                <span class="file-item-status status-${item.status}">
+                    ${item.status === 'uploading' ? '<i class="fas fa-spinner fa-spin"></i> Uploading' : 
+                      item.status === 'success' ? '<i class="fas fa-check"></i> Success' : 
+                      '<i class="fas fa-exclamation-triangle"></i> Error'}
+                </span>
+            `}
+        </div>
+    `).join('');
+}
+
+function getFileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    if (ext === 'pdf') return 'pdf';
+    if (ext === 'md' || ext === 'markdown') return 'markdown';
+    return 'alt';
+}
+
+function removeFile(index) {
+    filesToUpload.splice(index, 1);
+    updateFileQueue();
+}
+
+clearAllBtn.addEventListener('click', () => {
+    filesToUpload = [];
+    updateFileQueue();
+});
+
+uploadAllBtn.addEventListener('click', async () => {
+    uploadAllBtn.disabled = true;
+    uploadAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
     
-    try {
-        const response = await fetch('{{ url_for("admin_upload_document", repo_name=repository.name) }}', {
-            method: 'POST',
-            body: formData
-        });
+    for (let i = 0; i < filesToUpload.length; i++) {
+        if (filesToUpload[i].status !== 'pending') continue;
         
-        const data = await response.json();
+        filesToUpload[i].status = 'uploading';
+        filesToUpload[i].progress = 0;
+        updateFileQueue();
         
-        if (response.ok && data.success) {
-            statusSpan.textContent = data.message;
-            statusSpan.className = 'ml-4 text-sm text-green-600';
-            fileInput.value = '';
+        const formData = new FormData();
+        formData.append('file', filesToUpload[i].file);
+        
+        try {
+            // Simulate progress
+            const progressInterval = setInterval(() => {
+                if (filesToUpload[i].progress < 90) {
+                    filesToUpload[i].progress += 10;
+                    updateFileQueue();
+                }
+            }, 200);
             
-            // Reload page after 1 second to show new document
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        } else {
-            statusSpan.textContent = data.error || 'Upload failed';
-            statusSpan.className = 'ml-4 text-sm text-red-600';
+            const response = await fetch('{{ url_for("admin_upload_document", repo_name=repository.name) }}', {
+                method: 'POST',
+                body: formData
+            });
+            
+            clearInterval(progressInterval);
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                filesToUpload[i].status = 'success';
+                filesToUpload[i].progress = 100;
+            } else {
+                filesToUpload[i].status = 'error';
+                filesToUpload[i].error = data.error || 'Upload failed';
+            }
+        } catch (error) {
+            filesToUpload[i].status = 'error';
+            filesToUpload[i].error = error.message;
         }
-    } catch (error) {
-        statusSpan.textContent = 'Error: ' + error.message;
-        statusSpan.className = 'ml-4 text-sm text-red-600';
-    } finally {
-        submitButton.disabled = false;
-        submitButton.innerHTML = '<i class="fas fa-upload mr-2"></i>Upload Document';
+        
+        updateFileQueue();
+    }
+    
+    uploadAllBtn.disabled = false;
+    uploadAllBtn.innerHTML = '<i class="fas fa-check"></i> All Uploaded';
+    
+    // Reload after 2 seconds if all successful
+    if (filesToUpload.every(f => f.status === 'success')) {
+        setTimeout(() => {
+            window.location.reload();
+        }, 2000);
     }
 });
 
 async function deleteDocument(docId, filename) {
-    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
-        return;
-    }
+    if (!confirm(`Delete "${filename}"?`)) return;
     
     try {
         const response = await fetch(`{{ url_for("admin_delete_document", repo_name=repository.name, doc_id=0) }}`.replace('/0/', `/${docId}/`), {
@@ -192,31 +565,17 @@ async function deleteDocument(docId, filename) {
         const data = await response.json();
         
         if (response.ok && data.success) {
-            // Remove row from table
-            const row = document.getElementById(`doc-${docId}`);
-            if (row) {
-                row.remove();
-            }
+            document.getElementById(`doc-${docId}`).remove();
             
-            // Show success message
-            alert(data.message);
-            
-            // Reload if no more documents
-            if (document.querySelectorAll('tbody tr').length === 0) {
+            if (document.querySelectorAll('.document-card').length === 0) {
                 window.location.reload();
             }
         } else {
-            alert('Error: ' + (data.error || 'Failed to delete document'));
+            alert('Error: ' + (data.error || 'Failed to delete'));
         }
     } catch (error) {
         alert('Error: ' + error.message);
     }
 }
 </script>
-
-<style>
-.container {
-    max-width: 1200px;
-}
-</style>
 {% endblock %}
