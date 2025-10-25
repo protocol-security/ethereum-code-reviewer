@@ -296,6 +296,44 @@
         color: white;
         border-color: #667eea;
     }
+    
+    .repo-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 0.75rem;
+    }
+    
+    .btn-admin {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.625rem 1.25rem;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .btn-admin.btn-edit {
+        background: #4299e1;
+        color: white;
+    }
+    
+    .btn-admin.btn-edit:hover {
+        background: #3182ce;
+    }
+    
+    .btn-admin.btn-knowledge {
+        background: #48bb78;
+        color: white;
+    }
+    
+    .btn-admin.btn-knowledge:hover {
+        background: #38a169;
+    }
 </style>
 {% endblock %}
 
@@ -319,6 +357,14 @@
                 <span class="branch-tag"><i class="fas fa-code-branch"></i> {{ branch }}</span>
                 {% endfor %}
             </div>
+        </div>
+        <div class="repo-actions">
+            <a href="{{ url_for('admin_bp.repositories_bp.edit', repo_name=repository.name) }}" class="btn-admin btn-edit">
+                <i class="fas fa-edit"></i> Edit Repository
+            </a>
+            <a href="{{ url_for('admin_bp.repositories_bp.documents', repo_name=repository.name) }}" class="btn-admin btn-knowledge">
+                <i class="fas fa-book"></i> Knowledgebase
+            </a>
         </div>
     </div>
 </div>
