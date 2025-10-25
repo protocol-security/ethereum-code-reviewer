@@ -195,24 +195,31 @@ def scan_commit():
         if not repo_name or not commit_sha:
             return jsonify({'error': 'Repository name and commit SHA required'}), 400
         
-        # Check if commit already has findings (unless rescan is requested)
-        if not rescan and DATABASE_AVAILABLE:
+        # Check if commit already has findings
+        if DATABASE_AVAILABLE:
             db_manager = get_database_manager()
             session = db_manager.get_session()
             try:
                 from ...database import SecurityFinding
-                existing = session.query(SecurityFinding).filter(
+                existing_findings = session.query(SecurityFinding).filter(
                     SecurityFinding.repo_name == repo_name,
                     SecurityFinding.commit_sha == commit_sha
-                ).first()
+                ).all()
                 
-                if existing:
+                if existing_findings and not rescan:
+                    # Findings exist and this is not a rescan - prevent duplicate
                     session.close()
                     return jsonify({
                         'success': False,
                         'message': f'Commit {commit_sha[:7]} has already been scanned. Use rescan if you want to analyze it again.',
-                        'finding_uuid': str(existing.uuid)
+                        'finding_uuid': str(existing_findings[0].uuid)
                     }), 400
+                elif existing_findings and rescan:
+                    # This is a rescan - delete all existing findings for this commit first
+                    for finding in existing_findings:
+                        session.delete(finding)
+                    session.commit()
+                    logger.info(f"Deleted {len(existing_findings)} existing finding(s) for {repo_name}:{commit_sha[:7]} before rescan")
             finally:
                 session.close()
         
