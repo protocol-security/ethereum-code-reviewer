@@ -280,12 +280,12 @@
                     </span>
                 </td>
                 <td>
-                    <a href="{{ url_for('repository_detail', repo_name=finding.repo_name) }}" class="repo-link">
+                    <a href="{{ url_for('repositories_bp.repository_detail', repo_name=finding.repo_name) }}" class="repo-link">
                         {{ finding.repo_name }}
                     </a>
                 </td>
                 <td>
-                    <a href="{{ url_for('triage_finding', finding_uuid=finding.uuid) }}" class="repo-link">
+                    <a href="{{ url_for('findings_bp.triage_finding', finding_uuid=finding.uuid) }}" class="repo-link">
                         <span class="commit-sha">{{ finding.commit_sha[:7] }}</span>
                     </a>
                 </td>

@@ -348,7 +348,7 @@
             <tr>
                 <td>
                     {% if commit.finding_uuid %}
-                    <a href="{{ url_for('triage_finding', finding_uuid=commit.finding_uuid) }}" class="commit-sha">
+                    <a href="{{ url_for('findings_bp.triage_finding', finding_uuid=commit.finding_uuid) }}" class="commit-sha">
                         {{ commit.sha[:7] }}
                     </a>
                     {% else %}
@@ -392,7 +392,7 @@
                             <i class="fas fa-redo"></i> Rescan
                         </button>
                         {% if commit.finding_uuid %}
-                        <a href="{{ url_for('triage_finding', finding_uuid=commit.finding_uuid) }}" class="btn btn-sm btn-primary">
+                        <a href="{{ url_for('findings_bp.triage_finding', finding_uuid=commit.finding_uuid) }}" class="btn btn-sm btn-primary">
                             <i class="fas fa-eye"></i> View
                         </a>
                         {% endif %}

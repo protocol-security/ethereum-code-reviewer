@@ -452,7 +452,7 @@
     {% if findings %}
     {% for finding in findings %}
     <div class="finding-card" 
-        data-href="{{ url_for('triage_finding', finding_uuid=finding.uuid) }}">
+        data-href="{{ url_for('findings_bp.triage_finding', finding_uuid=finding.uuid) }}">
         
         <div class="finding-header">
             <div>
