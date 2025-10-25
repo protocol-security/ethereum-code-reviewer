@@ -199,27 +199,3 @@ def repository_detail(repo_name):
         logger.error(f"Error showing repository detail for {repo_name}: {e}")
         flash('Error loading repository details', 'error')
         return redirect(url_for('repositories_bp.repositories_list'))
-
-
-@repositories_bp.route('/scan-commit', methods=['POST'])
-@login_required
-def scan_commit():
-    """Scan or rescan a commit (authenticated users only)."""
-    try:
-        data = request.get_json()
-        repo_name = data.get('repo_name')
-        commit_sha = data.get('commit_sha')
-        rescan = data.get('rescan', False)
-        
-        if not repo_name or not commit_sha:
-            return jsonify({'error': 'Repository name and commit SHA required'}), 400
-        
-        # TODO: Implement actual scanning logic
-        return jsonify({
-            'success': True,
-            'message': f'Scan {"queued" if not rescan else "re-queued"} for commit {commit_sha[:7]}'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error scanning commit: {e}")
-        return jsonify({'error': 'Internal server error'}), 500

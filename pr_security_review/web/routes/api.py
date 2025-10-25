@@ -176,3 +176,154 @@ def triage_statistics():
     except Exception as e:
         logger.error(f"Error fetching triage statistics: {e}")
         return jsonify({'error': 'Failed to fetch statistics'}), 500
+
+
+@api_bp.route('/scan-commit', methods=['POST'])
+@login_required
+def scan_commit():
+    """Scan or rescan a commit (authenticated users only)."""
+    import os
+    import threading
+    from github import Github, Auth
+    
+    try:
+        data = request.get_json()
+        repo_name = data.get('repo_name')
+        commit_sha = data.get('commit_sha')
+        rescan = data.get('rescan', False)
+        
+        if not repo_name or not commit_sha:
+            return jsonify({'error': 'Repository name and commit SHA required'}), 400
+        
+        # Check if commit already has findings (unless rescan is requested)
+        if not rescan and DATABASE_AVAILABLE:
+            db_manager = get_database_manager()
+            session = db_manager.get_session()
+            try:
+                from ...database import SecurityFinding
+                existing = session.query(SecurityFinding).filter(
+                    SecurityFinding.repo_name == repo_name,
+                    SecurityFinding.commit_sha == commit_sha
+                ).first()
+                
+                if existing:
+                    session.close()
+                    return jsonify({
+                        'success': False,
+                        'message': f'Commit {commit_sha[:7]} has already been scanned. Use rescan if you want to analyze it again.',
+                        'finding_uuid': str(existing.uuid)
+                    }), 400
+            finally:
+                session.close()
+        
+        # Run the scan in a background thread to avoid blocking the request
+        def run_scan():
+            try:
+                # Import SecurityReview class
+                from ...__main__ import SecurityReview, CommitInfo
+                
+                # Get GitHub token
+                github_token = os.environ.get('GITHUB_TOKEN')
+                if not github_token:
+                    logger.error("GITHUB_TOKEN not configured")
+                    return
+                
+                # Initialize SecurityReview with configuration from environment
+                provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
+                provider_kwargs = {}
+                
+                # Get docs directory if configured
+                docs_dir = os.environ.get('DOCS_DIR')
+                voyage_key = os.environ.get('VOYAGE_API_KEY')
+                voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-large')
+                
+                logger.info(f"Starting scan for {repo_name}:{commit_sha[:7]}")
+                
+                # Initialize reviewer
+                reviewer = SecurityReview(
+                    provider_name,
+                    provider_kwargs,
+                    docs_dir=docs_dir,
+                    voyage_key=voyage_key,
+                    voyage_model=voyage_model
+                )
+                
+                # Analyze the commit
+                analysis, cost_info = reviewer.analyze_commit(repo_name, commit_sha)
+                
+                logger.info(f"Analysis complete for {repo_name}:{commit_sha[:7]} - Vulnerabilities: {analysis.get('has_vulnerabilities', False)}")
+                
+                # Store the finding in database
+                if DATABASE_AVAILABLE:
+                    # Get commit info from GitHub
+                    github = Github(auth=Auth.Token(github_token))
+                    repo = github.get_repo(repo_name)
+                    commit = repo.get_commit(commit_sha)
+                    
+                    # Create CommitInfo object
+                    commit_info = CommitInfo(
+                        sha=commit.sha,
+                        url=commit.html_url,
+                        message=commit.commit.message,
+                        author=commit.commit.author.name if commit.commit.author else 'Unknown',
+                        date=commit.commit.author.date if commit.commit.author else None,
+                        branch=None  # Branch info not always available from commit
+                    )
+                    
+                    # Generate HTML content for the finding
+                    html_content = f"""<h1>Security Review for {repo_name}</h1>
+<p><strong>Commit:</strong> <a href="{commit_info.url}">{commit_info.sha[:7]}</a></p>
+<p><strong>Author:</strong> {commit_info.author}</p>
+<p><strong>Date:</strong> {commit_info.date}</p>
+<p><strong>Message:</strong> {commit_info.message}</p>
+<h2>Analysis Results</h2>
+<p><strong>Confidence Score:</strong> {analysis['confidence_score']}%</p>
+<p><strong>Has Vulnerabilities:</strong> {'Yes' if analysis['has_vulnerabilities'] else 'No'}</p>
+<h3>Summary</h3>
+<p>{analysis['summary']}</p>
+"""
+                    
+                    if analysis.get('findings'):
+                        html_content += "<h3>Detailed Findings</h3>"
+                        for finding in analysis['findings']:
+                            html_content += f"""
+<h4>{finding['severity']} Severity Issue</h4>
+<ul>
+<li><strong>Description:</strong> {finding['description']}</li>
+<li><strong>Recommendation:</strong> {finding['recommendation']}</li>
+<li><strong>Confidence:</strong> {finding['confidence']}%</li>
+</ul>
+"""
+                    
+                    # Store in database
+                    db_manager = get_database_manager()
+                    finding_uuid = db_manager.store_finding(
+                        html_content=html_content,
+                        repo_name=repo_name,
+                        commit_info=commit_info,
+                        analysis=analysis,
+                        metadata={'cost_info': str(cost_info) if cost_info else None}
+                    )
+                    
+                    logger.info(f"Stored finding {finding_uuid} for {repo_name}:{commit_sha[:7]}")
+                else:
+                    logger.warning("Database not available, scan results not stored")
+                    
+            except Exception as e:
+                logger.error(f"Error in background scan: {e}", exc_info=True)
+        
+        # Start the scan in background
+        scan_thread = threading.Thread(target=run_scan)
+        scan_thread.daemon = True
+        scan_thread.start()
+        
+        logger.info(f"Scan {'re-' if rescan else ''}queued for {repo_name}:{commit_sha[:7]}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Scan {"re-queued" if rescan else "queued"} for commit {commit_sha[:7]}. This may take a few moments.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error scanning commit: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
