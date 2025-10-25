@@ -38,6 +38,56 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 2rem;
+        }
+        
+        .nav-menu {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 1;
+            justify-content: center;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            color: rgba(255, 255, 255, 0.9);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+        
+        .nav-item.active {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        
+        .nav-item i {
+            font-size: 1.1rem;
+        }
+        
+        .nav-item .badge {
+            position: absolute;
+            top: 0.3rem;
+            right: 0.3rem;
+            background: #ef4444;
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 10px;
+            font-weight: 600;
+            line-height: 1;
         }
         
         .header h1 {
@@ -147,6 +197,7 @@
             text-decoration: none;
             font-size: 0.875rem;
             transition: background 0.2s;
+            white-space: nowrap;
         }
         
         .dropdown-item:hover {
@@ -157,6 +208,7 @@
         .dropdown-item i {
             width: 16px;
             color: #718096;
+            text-align: center;
         }
         
         .dropdown-divider {
@@ -330,14 +382,47 @@
             opacity: 0.8;
         }
         
+        @media (max-width: 1024px) {
+            .nav-menu {
+                gap: 0.25rem;
+            }
+            
+            .nav-item {
+                padding: 0.5rem 0.8rem;
+                font-size: 0.85rem;
+            }
+            
+            .nav-item span {
+                display: none;
+            }
+            
+            .nav-item i {
+                font-size: 1.2rem;
+            }
+        }
+        
         @media (max-width: 768px) {
             .header-content {
-                flex-direction: column;
+                flex-wrap: wrap;
                 gap: 1rem;
             }
             
             .header h1 {
                 font-size: 1.5rem;
+            }
+            
+            .nav-menu {
+                order: 3;
+                width: 100%;
+                justify-content: space-around;
+                gap: 0.25rem;
+                padding-top: 0.5rem;
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            
+            .nav-item {
+                padding: 0.5rem 0.6rem;
+                font-size: 0.8rem;
             }
             
             .main-content {
@@ -367,6 +452,30 @@
             </h1>
             
             {% if user %}
+            <nav class="nav-menu">
+                <a href="{{ url_for('main_bp.index') }}" class="nav-item {% if request.endpoint == 'main_bp.index' %}active{% endif %}">
+                    <i class="fas fa-home"></i>
+                    <span>Dashboard</span>
+                </a>
+                
+                <a href="{{ url_for('findings_bp.alerts') }}" class="nav-item {% if request.endpoint == 'findings_bp.alerts' %}active{% endif %}">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Alerts</span>
+                </a>
+                
+                <a href="{{ url_for('repositories_bp.repositories_list') }}" class="nav-item {% if request.endpoint == 'repositories_bp.repositories_list' or 'repository' in request.endpoint %}active{% endif %}">
+                    <i class="fas fa-code-branch"></i>
+                    <span>Repositories</span>
+                </a>
+                
+                {% if user.email in ['fredrik.svantes@ethereum.org'] or (user.is_admin is defined and user.is_admin) %}
+                <a href="{{ url_for('admin_bp.dashboard_bp.admin_dashboard') }}" class="nav-item {% if 'admin' in request.endpoint %}active{% endif %}">
+                    <i class="fas fa-users-cog"></i>
+                    <span>Admin</span>
+                </a>
+                {% endif %}
+            </nav>
+            
             <div class="user-profile-container">
                 <img src="{{ user.picture or 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'40\' height=\'40\' viewBox=\'0 0 24 24\' fill=\'%23ffffff\' opacity=\'0.8\'%3E%3Cpath d=\'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\'/%3E%3C/svg%3E' }}" 
                      alt="User Avatar" 
@@ -380,30 +489,6 @@
                     </div>
                     
                     <div class="dropdown-menu">
-                        <a href="{{ url_for('main_bp.index') }}" class="dropdown-item">
-                            <i class="fas fa-home"></i>
-                            Dashboard
-                        </a>
-                        
-                        <a href="{{ url_for('findings_bp.alerts') }}" class="dropdown-item">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            Alerts
-                        </a>
-                        
-                        <a href="{{ url_for('repositories_bp.repositories_list') }}" class="dropdown-item">
-                            <i class="fas fa-code-branch"></i>
-                            Repositories
-                        </a>
-                        
-                        <div class="dropdown-divider"></div>
-                        
-                        {% if user.email in ['fredrik.svantes@ethereum.org'] or (user.is_admin is defined and user.is_admin) %}
-                        <a href="{{ url_for('admin_bp.dashboard_bp.admin_dashboard') }}" class="dropdown-item">
-                            <i class="fas fa-users-cog"></i>
-                            Admin
-                        </a>
-                        {% endif %}
-                        
                         <a href="{{ url_for('findings_bp.user_settings') }}" class="dropdown-item">
                             <i class="fas fa-cog"></i>
                             Settings
