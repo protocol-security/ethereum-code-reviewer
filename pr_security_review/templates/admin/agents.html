@@ -136,7 +136,7 @@
 </div>
 
 <div class="action-buttons">
-    <a href="{{ url_for('admin_create_agent') }}" class="btn btn-primary">
+    <a href="{{ url_for('admin_bp.agents_bp.create') }}" class="btn btn-primary">
         <i class="fas fa-plus"></i>
         Create New Agent
     </a>
@@ -181,18 +181,18 @@
                         <div style="display: flex; gap: 0.5rem;">
                             {% if agent.is_main %}
                                 {% if user.get('email') and is_owner %}
-                                <a href="{{ url_for('admin_edit_agent', agent_id=agent.id) }}" class="action-btn edit">
+                                <a href="{{ url_for('admin_bp.agents_bp.edit', agent_id=agent.id) }}" class="action-btn edit">
                                     <i class="fas fa-edit"></i>
                                     Edit
                                 </a>
                                 {% else %}
-                                <a href="{{ url_for('admin_view_agent', agent_id=agent.id) }}" class="action-btn view">
+                                <a href="{{ url_for('admin_bp.agents_bp.view', agent_id=agent.id) }}" class="action-btn view">
                                     <i class="fas fa-eye"></i>
                                     View
                                 </a>
                                 {% endif %}
                             {% else %}
-                                <a href="{{ url_for('admin_edit_agent', agent_id=agent.id) }}" class="action-btn edit">
+                                <a href="{{ url_for('admin_bp.agents_bp.edit', agent_id=agent.id) }}" class="action-btn edit">
                                     <i class="fas fa-edit"></i>
                                     Edit
                                 </a>

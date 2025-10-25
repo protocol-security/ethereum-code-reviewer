@@ -261,7 +261,7 @@
             {% endif %}
         {% endwith %}
         
-        <form method="POST" action="{{ url_for('admin_create_user') }}">
+        <form method="POST" action="{{ url_for('admin_bp.users_bp.create') }}">
             <div class="form-group">
                 <label for="email" class="form-label">Email Address *</label>
                 <input type="email" id="email" name="email" class="form-input" required>

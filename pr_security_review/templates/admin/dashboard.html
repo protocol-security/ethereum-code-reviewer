@@ -421,7 +421,7 @@
                     </td>
                     <td>
                         <div class="action-buttons">
-                            <a href="{{ url_for('admin_edit_repository', repo_name=repo.name) }}" class="btn-sm btn-edit">
+                            <a href="{{ url_for('admin_bp.repositories_bp.edit', repo_name=repo.name) }}" class="btn-sm btn-edit">
                                 <i class="fas fa-edit"></i>
                                 Edit
                             </a>
@@ -456,7 +456,7 @@
             <i class="fas fa-robot"></i>
             AI Agent Management
         </div>
-        <a href="{{ url_for('admin_agents') }}" class="btn-primary">
+        <a href="{{ url_for('admin_bp.agents_bp.list_agents') }}" class="btn-primary">
             <i class="fas fa-cog"></i>
             Manage Agents
         </a>
@@ -470,7 +470,7 @@
             <i class="fas fa-users"></i>
             User Management
         </div>
-        <a href="{{ url_for('admin_create_user') }}" class="btn-primary">
+        <a href="{{ url_for('admin_bp.users_bp.create') }}" class="btn-primary">
             <i class="fas fa-user-plus"></i>
             Add New User
         </a>
@@ -563,7 +563,7 @@
                     </td>
                     <td>
                         <div class="action-buttons">
-                            <a href="{{ url_for('admin_edit_user', email=user_data.email) }}" class="btn-sm btn-edit">
+                            <a href="{{ url_for('admin_bp.users_bp.edit', email=user_data.email) }}" class="btn-sm btn-edit">
                                 <i class="fas fa-edit"></i>
                                 Edit
                             </a>

@@ -321,7 +321,7 @@
             {% endif %}
         {% endwith %}
         
-        <form method="POST" action="{{ url_for('admin_edit_user', email=user_data.email) }}">
+        <form method="POST" action="{{ url_for('admin_bp.users_bp.edit', email=user_data.email) }}">
             <div class="form-group">
                 <label for="email" class="form-label">Email Address</label>
                 <input type="email" id="email" name="email" class="form-input" value="{{ user_data.email }}" disabled>
