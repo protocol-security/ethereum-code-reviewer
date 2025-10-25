@@ -66,8 +66,9 @@ def show_dashboard() -> str:
         # Calculate statistics
         stats = FindingsService.calculate_statistics(all_findings)
         
-        # Get recent findings (last 10)
-        recent_findings = all_findings[:10]
+        # Get recent VULNERABLE findings only (last 10)
+        vulnerable_findings = [f for f in all_findings if f.get('has_vulnerabilities')]
+        recent_findings = vulnerable_findings[:10]
         
         return render_template('dashboard.html',
                              stats=stats,
