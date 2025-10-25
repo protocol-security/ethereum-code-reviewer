@@ -174,13 +174,53 @@
         margin-bottom: 1rem;
         opacity: 0.5;
     }
+    
+    .inactive-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        background: #fed7d7;
+        color: #c53030;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-left: 0.75rem;
+    }
 </style>
 {% endblock %}
 
+{% block extra_scripts %}
+<script>
+function toggleInactive(showInactive) {
+    const currentUrl = new URL(window.location.href);
+    if (showInactive) {
+        currentUrl.searchParams.set('show_inactive', 'true');
+    } else {
+        currentUrl.searchParams.delete('show_inactive');
+    }
+    window.location.href = currentUrl.toString();
+}
+</script>
+{% endblock %}
+
 {% block content %}
-<h1 style="margin-bottom: 2rem; color: #2d3748; font-size: 2rem; font-weight: 700;">
-    <i class="fas fa-code-branch"></i> Repositories
-</h1>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1 style="color: #2d3748; font-size: 2rem; font-weight: 700; margin: 0;">
+        <i class="fas fa-code-branch"></i> Repositories
+    </h1>
+    
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="show-inactive-checkbox" 
+                   {% if show_inactive %}checked{% endif %}
+                   onchange="toggleInactive(this.checked)"
+                   style="width: 18px; height: 18px; cursor: pointer;">
+            <span style="color: #4a5568; font-size: 0.875rem; font-weight: 500;">Show inactive repositories</span>
+        </label>
+    </div>
+</div>
 
 {% if repositories %}
 <div class="repos-container">
@@ -192,7 +232,14 @@
                     <i class="fas fa-code-branch"></i>
                 </div>
                 <div>
-                    <div class="repo-name">{{ repo.name }}</div>
+                    <div class="repo-name">
+                        {{ repo.name }}
+                        {% if not repo.is_active %}
+                        <span class="inactive-badge">
+                            <i class="fas fa-ban"></i> Inactive
+                        </span>
+                        {% endif %}
+                    </div>
                     <div class="repo-url">{{ repo.url }}</div>
                 </div>
             </div>
