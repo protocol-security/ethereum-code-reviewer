@@ -1002,8 +1002,12 @@ class SecurityFinderApp:
                     return redirect(url_for('admin_dashboard'))
                 
                 if request.method == 'GET':
+                    # Get all agents for the dropdown
+                    agents = db_manager.get_all_agents()
+                    
                     return render_template('admin/edit_repository.html', 
                                          repository=repository.to_dict(),
+                                         agents=agents,
                                          user=self.get_current_user())
                 
                 # Handle POST request
@@ -1012,6 +1016,10 @@ class SecurityFinderApp:
                 telegram_channel_id = request.form.get('telegram_channel_id', '').strip()
                 notify_default_channel = request.form.get('notify_default_channel') == 'on'
                 is_active = request.form.get('is_active') == 'on'
+                
+                # Get agent_id (empty string means use main agent)
+                agent_id_str = request.form.get('agent_id', '').strip()
+                agent_id = int(agent_id_str) if agent_id_str else None
                 
                 # Validate input
                 if not url:
@@ -1043,6 +1051,16 @@ class SecurityFinderApp:
                     is_active=is_active,
                     updated_by=current_user['email']
                 )
+                
+                # Update agent assignment if repository update was successful
+                if success:
+                    agent_success = db_manager.update_repository_agent(
+                        repo_name=repo_name,
+                        agent_id=agent_id,
+                        updated_by=current_user['email']
+                    )
+                    if not agent_success:
+                        logger.warning(f"Failed to update agent for repository {repo_name}")
                 
                 if success:
                     # Send audit email notification to owner
@@ -1346,6 +1364,266 @@ class SecurityFinderApp:
             except Exception as e:
                 logger.error(f"Error fetching repositories: {e}")
                 return jsonify({'error': 'Failed to fetch repositories'}), 500
+        
+        # Agent management routes (admin only)
+        @self.app.route('/admin/agents')
+        def admin_agents():
+            """Agent management page (admin only)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            if not self.is_admin():
+                flash('Access denied. Admin privileges required.', 'error')
+                return redirect(url_for('index'))
+            
+            if not DATABASE_AVAILABLE:
+                flash('Database not available', 'error')
+                return redirect(url_for('admin_dashboard'))
+            
+            try:
+                db_manager = get_database_manager()
+                agents = db_manager.get_all_agents()
+                
+                return render_template('admin/agents.html',
+                                     agents=agents,
+                                     user=self.get_current_user(),
+                                     is_owner=self.is_owner())
+                
+            except Exception as e:
+                logger.error(f"Error loading agents: {e}")
+                flash('Error loading agents', 'error')
+                return redirect(url_for('admin_dashboard'))
+        
+        @self.app.route('/admin/agents/create', methods=['GET', 'POST'])
+        def admin_create_agent():
+            """Create a new agent (admin only)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            if not self.is_admin():
+                flash('Access denied. Admin privileges required.', 'error')
+                return redirect(url_for('index'))
+            
+            if not DATABASE_AVAILABLE:
+                flash('Database not available', 'error')
+                return redirect(url_for('admin_dashboard'))
+            
+            try:
+                db_manager = get_database_manager()
+                
+                if request.method == 'GET':
+                    # Get main agent for default values
+                    main_agent = db_manager.get_main_agent()
+                    
+                    return render_template('admin/create_agent.html',
+                                         main_agent=main_agent.to_dict() if main_agent else None,
+                                         user=self.get_current_user())
+                
+                # Handle POST request
+                name = request.form.get('name', '').strip()
+                
+                if not name:
+                    flash('Agent name is required', 'error')
+                    return redirect(url_for('admin_create_agent'))
+                
+                # Build prompts dictionary from form data
+                prompts = {
+                    'security': {
+                        'intro': request.form.get('security_intro', '').strip(),
+                        'focus_areas': request.form.get('security_focus_areas', '').strip(),
+                        'important_notes': request.form.get('security_important_notes', '').strip(),
+                        'examples': request.form.get('security_examples', '').strip(),
+                        'response_format': request.form.get('security_response_format', '').strip(),
+                        'no_vulns_response': request.form.get('security_no_vulns_response', '').strip()
+                    },
+                    'skeptical_verification': {
+                        'intro': request.form.get('skeptical_intro', '').strip(),
+                        'critical_questions': request.form.get('skeptical_critical_questions', '').strip(),
+                        'be_critical': request.form.get('skeptical_be_critical', '').strip(),
+                        'only_confirm': request.form.get('skeptical_only_confirm', '').strip(),
+                        'response_format': request.form.get('skeptical_response_format', '').strip()
+                    },
+                    'synthesis': {
+                        'intro': request.form.get('synthesis_intro', '').strip(),
+                        'instruction': request.form.get('synthesis_instruction', '').strip()
+                    },
+                    'system_prompts': {
+                        'default': request.form.get('system_default', '').strip(),
+                        'anthropic': request.form.get('system_anthropic', '').strip(),
+                        'synthesize': request.form.get('system_synthesize', '').strip()
+                    }
+                }
+                
+                # Create agent
+                current_user = self.get_current_user()
+                agent_id = db_manager.create_agent(
+                    name=name,
+                    prompts=prompts,
+                    created_by=current_user['email'],
+                    is_main=False
+                )
+                
+                if agent_id:
+                    flash(f'Agent "{name}" created successfully', 'success')
+                    return redirect(url_for('admin_agents'))
+                else:
+                    flash('Failed to create agent', 'error')
+                    return redirect(url_for('admin_create_agent'))
+                
+            except Exception as e:
+                logger.error(f"Error creating agent: {e}")
+                flash('Error creating agent', 'error')
+                return redirect(url_for('admin_create_agent'))
+        
+        @self.app.route('/admin/agents/<int:agent_id>/edit', methods=['GET', 'POST'])
+        def admin_edit_agent(agent_id):
+            """Edit an agent (admin only, owner for main agent)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            if not self.is_admin():
+                flash('Access denied. Admin privileges required.', 'error')
+                return redirect(url_for('index'))
+            
+            if not DATABASE_AVAILABLE:
+                flash('Database not available', 'error')
+                return redirect(url_for('admin_dashboard'))
+            
+            try:
+                db_manager = get_database_manager()
+                agent = db_manager.get_agent(agent_id)
+                
+                if not agent:
+                    flash('Agent not found', 'error')
+                    return redirect(url_for('admin_agents'))
+                
+                # Check permissions - only owners can edit main agent
+                if agent.is_main and not self.is_owner():
+                    flash('Only owners can edit the main agent', 'error')
+                    return redirect(url_for('admin_view_agent', agent_id=agent_id))
+                
+                if request.method == 'GET':
+                    return render_template('admin/edit_agent.html',
+                                         agent=agent.to_dict(),
+                                         user=self.get_current_user())
+                
+                # Handle POST request
+                name = request.form.get('name', '').strip()
+                
+                if not name and not agent.is_main:
+                    flash('Agent name is required', 'error')
+                    return redirect(url_for('admin_edit_agent', agent_id=agent_id))
+                
+                # Build prompts dictionary from form data
+                prompts = {
+                    'security': {
+                        'intro': request.form.get('security_intro', '').strip(),
+                        'focus_areas': request.form.get('security_focus_areas', '').strip(),
+                        'important_notes': request.form.get('security_important_notes', '').strip(),
+                        'examples': request.form.get('security_examples', '').strip(),
+                        'response_format': request.form.get('security_response_format', '').strip(),
+                        'no_vulns_response': request.form.get('security_no_vulns_response', '').strip()
+                    },
+                    'skeptical_verification': {
+                        'intro': request.form.get('skeptical_intro', '').strip(),
+                        'critical_questions': request.form.get('skeptical_critical_questions', '').strip(),
+                        'be_critical': request.form.get('skeptical_be_critical', '').strip(),
+                        'only_confirm': request.form.get('skeptical_only_confirm', '').strip(),
+                        'response_format': request.form.get('skeptical_response_format', '').strip()
+                    },
+                    'synthesis': {
+                        'intro': request.form.get('synthesis_intro', '').strip(),
+                        'instruction': request.form.get('synthesis_instruction', '').strip()
+                    },
+                    'system_prompts': {
+                        'default': request.form.get('system_default', '').strip(),
+                        'anthropic': request.form.get('system_anthropic', '').strip(),
+                        'synthesize': request.form.get('system_synthesize', '').strip()
+                    }
+                }
+                
+                # Update agent
+                current_user = self.get_current_user()
+                success = db_manager.update_agent(
+                    agent_id=agent_id,
+                    name=name if not agent.is_main else None,  # Don't update name for main agent
+                    prompts=prompts,
+                    updated_by=current_user['email']
+                )
+                
+                if success:
+                    flash(f'Agent updated successfully', 'success')
+                    return redirect(url_for('admin_agents'))
+                else:
+                    flash('Failed to update agent', 'error')
+                    return redirect(url_for('admin_edit_agent', agent_id=agent_id))
+                
+            except Exception as e:
+                logger.error(f"Error editing agent {agent_id}: {e}")
+                flash('Error editing agent', 'error')
+                return redirect(url_for('admin_agents'))
+        
+        @self.app.route('/admin/agents/<int:agent_id>/view')
+        def admin_view_agent(agent_id):
+            """View an agent (admin only)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            if not self.is_admin():
+                flash('Access denied. Admin privileges required.', 'error')
+                return redirect(url_for('index'))
+            
+            if not DATABASE_AVAILABLE:
+                flash('Database not available', 'error')
+                return redirect(url_for('admin_dashboard'))
+            
+            try:
+                db_manager = get_database_manager()
+                agent = db_manager.get_agent(agent_id)
+                
+                if not agent:
+                    flash('Agent not found', 'error')
+                    return redirect(url_for('admin_agents'))
+                
+                return render_template('admin/view_agent.html',
+                                     agent=agent.to_dict(),
+                                     user=self.get_current_user())
+                
+            except Exception as e:
+                logger.error(f"Error viewing agent {agent_id}: {e}")
+                flash('Error viewing agent', 'error')
+                return redirect(url_for('admin_agents'))
+        
+        @self.app.route('/admin/agents/<int:agent_id>/delete', methods=['POST'])
+        def admin_delete_agent(agent_id):
+            """Delete an agent (admin only)."""
+            if not self.is_authenticated():
+                return jsonify({'error': 'Unauthorized'}), 401
+            
+            if not self.is_admin():
+                return jsonify({'error': 'Access denied'}), 403
+            
+            if not DATABASE_AVAILABLE:
+                return jsonify({'error': 'Database not available'}), 503
+            
+            try:
+                db_manager = get_database_manager()
+                
+                # Check if agent is main before attempting deletion
+                agent = db_manager.get_agent(agent_id)
+                if agent and agent.is_main:
+                    return jsonify({'error': 'Cannot delete main agent'}), 400
+                
+                success = db_manager.delete_agent(agent_id)
+                
+                if success:
+                    return jsonify({'success': True, 'message': 'Agent deleted successfully'})
+                else:
+                    return jsonify({'error': 'Failed to delete agent or agent not found'}), 500
+                
+            except Exception as e:
+                logger.error(f"Error deleting agent {agent_id}: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
     
     def _generate_example_report(self) -> Dict:
         """Generate an example security report for demonstration purposes."""

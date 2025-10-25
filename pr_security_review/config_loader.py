@@ -4,7 +4,7 @@ Configuration loader for agent prompts.
 
 import os
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class AgentConfig:
     """Singleton class to load and store agent configuration."""
@@ -37,6 +37,46 @@ class AgentConfig:
             
         # Validate required keys
         self._validate_config()
+    
+    def load_from_dict(self, config_dict: Dict[str, Any]) -> None:
+        """
+        Load configuration from a dictionary.
+        
+        Args:
+            config_dict: Configuration dictionary (should contain 'prompts' key)
+        """
+        self._config = config_dict
+        # Validate required keys
+        self._validate_config()
+    
+    def load_for_repository(self, repo_name: str) -> bool:
+        """
+        Load agent configuration for a specific repository from database.
+        
+        Args:
+            repo_name: Repository name
+            
+        Returns:
+            bool: True if loaded successfully, False otherwise
+        """
+        try:
+            from .database import get_database_manager
+            
+            db_manager = get_database_manager()
+            agent_data = db_manager.get_repository_agent(repo_name)
+            
+            if agent_data and agent_data.get('prompts'):
+                # Wrap prompts in expected structure
+                self._config = {'prompts': agent_data['prompts']}
+                self._validate_config()
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to load agent config for repository {repo_name}: {e}")
+            return False
     
     def _validate_config(self) -> None:
         """Validate that all required configuration keys are present."""

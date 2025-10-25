@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}View Agent - Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+    .form-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    
+    .page-header {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    
+    .page-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+    }
+    
+    .page-header p {
+        color: #718096;
+        font-size: 1rem;
+    }
+    
+    .back-button {
+        margin-bottom: 2rem;
+    }
+    
+    .prompt-section {
+        background: #f7fafc;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+    }
+    
+    .prompt-section-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .prompt-label {
+        display: block;
+        font-weight: 500;
+        color: #4a5568;
+        margin-bottom: 0.5rem;
+        margin-top: 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .prompt-label:first-child {
+        margin-top: 0;
+    }
+    
+    .prompt-content {
+        background: white;
+        padding: 1rem;
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    
+    .info-banner {
+        background: #eff6ff;
+        border-left: 4px solid #3b82f6;
+        padding: 1rem;
+        margin-bottom: 2rem;
+        border-radius: 0 8px 8px 0;
+    }
+    
+    .info-banner i {
+        color: #3b82f6;
+        margin-right: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-robot"></i>
+            View Agent
+        </h1>
+        <p>Configuration for <strong>{{ agent.name }}</strong></p>
+    </div>
+
+    <div class="back-button">
+        <a href="{{ url_for('admin_agents') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i>
+            Back to Agents
+        </a>
+    </div>
+
+    <div class="info-banner">
+        <i class="fas fa-info-circle"></i>
+        <strong>View Only:</strong> This agent can only be edited by the Owner. Contact the system owner if changes are needed.
+    </div>
+
+    <div class="card">
+        <div class="card-content">
+            <!-- Security Prompts -->
+            <div class="prompt-section">
+                <div class="prompt-section-title">
+                    <i class="fas fa-shield-alt"></i>
+                    Security Prompt Configuration
+                </div>
+                
+                <div class="prompt-label">Introduction</div>
+                <div class="prompt-content">{{ agent.prompts.security.intro if agent.prompts.security else 'N/A' }}</div>
+                
+                <div class="prompt-label">Focus Areas</div>
+                <div class="prompt-content">{{ agent.prompts.security.focus_areas if agent.prompts.security else 'N/A' }}</div>
+                
+                <div class="prompt-label">Important Notes</div>
+                <div class="prompt-content">{{ agent.prompts.security.important_notes if agent.prompts.security else 'N/A' }}</div>
+                
+                <div class="prompt-label">Examples</div>
+                <div class="prompt-content">{{ agent.prompts.security.examples if agent.prompts.security else 'N/A' }}</div>
+                
+                <div class="prompt-label">Response Format</div>
+                <div class="prompt-content">{{ agent.prompts.security.response_format if agent.prompts.security else 'N/A' }}</div>
+                
+                <div class="prompt-label">No Vulnerabilities Response</div>
+                <div class="prompt-content">{{ agent.prompts.security.no_vulns_response if agent.prompts.security else 'N/A' }}</div>
+            </div>
+
+            <!-- Skeptical Verification -->
+            <div class="prompt-section">
+                <div class="prompt-section-title">
+                    <i class="fas fa-search"></i>
+                    Skeptical Verification Configuration
+                </div>
+                
+                <div class="prompt-label">Introduction</div>
+                <div class="prompt-content">{{ agent.prompts.skeptical_verification.intro if agent.prompts.skeptical_verification else 'N/A' }}</div>
+                
+                <div class="prompt-label">Critical Questions</div>
+                <div class="prompt-content">{{ agent.prompts.skeptical_verification.critical_questions if agent.prompts.skeptical_verification else 'N/A' }}</div>
+                
+                <div class="prompt-label">Be Critical</div>
+                <div class="prompt-content">{{ agent.prompts.skeptical_verification.be_critical if agent.prompts.skeptical_verification else 'N/A' }}</div>
+                
+                <div class="prompt-label">Only Confirm</div>
+                <div class="prompt-content">{{ agent.prompts.skeptical_verification.only_confirm if agent.prompts.skeptical_verification else 'N/A' }}</div>
+                
+                <div class="prompt-label">Response Format</div>
+                <div class="prompt-content">{{ agent.prompts.skeptical_verification.response_format if agent.prompts.skeptical_verification else 'N/A' }}</div>
+            </div>
+
+            <!-- Synthesis -->
+            <div class="prompt-section">
+                <div class="prompt-section-title">
+                    <i class="fas fa-layer-group"></i>
+                    Synthesis Configuration
+                </div>
+                
+                <div class="prompt-label">Introduction</div>
+                <div class="prompt-content">{{ agent.prompts.synthesis.intro if agent.prompts.synthesis else 'N/A' }}</div>
+                
+                <div class="prompt-label">Instruction</div>
+                <div class="prompt-content">{{ agent.prompts.synthesis.instruction if agent.prompts.synthesis else 'N/A' }}</div>
+            </div>
+
+            <!-- System Prompts -->
+            <div class="prompt-section">
+                <div class="prompt-section-title">
+                    <i class="fas fa-cog"></i>
+                    System Prompts Configuration
+                </div>
+                
+                <div class="prompt-label">Default System Prompt</div>
+                <div class="prompt-content">{{ agent.prompts.system_prompts.default if agent.prompts.system_prompts else 'N/A' }}</div>
+                
+                <div class="prompt-label">Anthropic System Prompt</div>
+                <div class="prompt-content">{{ agent.prompts.system_prompts.anthropic if agent.prompts.system_prompts else 'N/A' }}</div>
+                
+                <div class="prompt-label">Synthesize System Prompt</div>
+                <div class="prompt-content">{{ agent.prompts.system_prompts.synthesize if agent.prompts.system_prompts else 'N/A' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Agents - Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+    .page-header {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    
+    .page-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+    }
+    
+    .page-header p {
+        color: #718096;
+        font-size: 1rem;
+    }
+    
+    .back-button {
+        margin-bottom: 2rem;
+    }
+    
+    .action-buttons {
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: flex-end;
+    }
+    
+    .agents-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .agents-table th {
+        background: #f7fafc;
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        color: #4a5568;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .agents-table td {
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .agents-table tr:hover {
+        background: #f7fafc;
+    }
+    
+    .agent-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        background: #667eea;
+        color: white;
+    }
+    
+    .action-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .action-btn.edit {
+        background: #667eea;
+        color: white;
+    }
+    
+    .action-btn.edit:hover {
+        background: #5a67d8;
+    }
+    
+    .action-btn.view {
+        background: #4299e1;
+        color: white;
+    }
+    
+    .action-btn.view:hover {
+        background: #3182ce;
+    }
+    
+    .action-btn.delete {
+        background: #f56565;
+        color: white;
+    }
+    
+    .action-btn.delete:hover {
+        background: #e53e3e;
+    }
+    
+    .action-btn:disabled {
+        background: #cbd5e0;
+        cursor: not-allowed;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>
+        <i class="fas fa-robot"></i>
+        Manage AI Agents
+    </h1>
+    <p>Configure AI agents for security analysis</p>
+</div>
+
+<div class="back-button">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Back to Admin Dashboard
+    </a>
+</div>
+
+<div class="action-buttons">
+    <a href="{{ url_for('admin_create_agent') }}" class="btn btn-primary">
+        <i class="fas fa-plus"></i>
+        Create New Agent
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-content">
+        {% if agents %}
+        <table class="agents-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Created</th>
+                    <th>Last Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for agent in agents %}
+                <tr>
+                    <td>
+                        <strong>{{ agent.name }}</strong>
+                    </td>
+                    <td>
+                        {% if agent.is_main %}
+                        <span class="agent-badge">
+                            <i class="fas fa-star"></i>
+                            Main Agent
+                        </span>
+                        {% else %}
+                        <span style="color: #718096;">Custom Agent</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 0.875rem; color: #718096;">
+                        {{ agent.created_at[:19] if agent.created_at else 'N/A' }} UTC
+                    </td>
+                    <td style="font-size: 0.875rem; color: #718096;">
+                        {{ agent.updated_at[:19] if agent.updated_at else 'N/A' }} UTC
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 0.5rem;">
+                            {% if agent.is_main %}
+                                {% if user.get('email') and is_owner %}
+                                <a href="{{ url_for('admin_edit_agent', agent_id=agent.id) }}" class="action-btn edit">
+                                    <i class="fas fa-edit"></i>
+                                    Edit
+                                </a>
+                                {% else %}
+                                <a href="{{ url_for('admin_view_agent', agent_id=agent.id) }}" class="action-btn view">
+                                    <i class="fas fa-eye"></i>
+                                    View
+                                </a>
+                                {% endif %}
+                            {% else %}
+                                <a href="{{ url_for('admin_edit_agent', agent_id=agent.id) }}" class="action-btn edit">
+                                    <i class="fas fa-edit"></i>
+                                    Edit
+                                </a>
+                                <button 
+                                    class="action-btn delete" 
+                                    onclick="deleteAgent({{ agent.id }}, '{{ agent.name }}')"
+                                >
+                                    <i class="fas fa-trash"></i>
+                                    Delete
+                                </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="text-align: center; padding: 3rem; color: #718096;">
+            <i class="fas fa-robot" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+            <p>No agents found. Create one to get started.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function deleteAgent(agentId, agentName) {
+    if (!confirm(`Are you sure you want to delete the agent "${agentName}"? This action cannot be undone.`)) {
+        return;
+    }
+    
+    fetch(`/admin/agents/${agentId}/delete`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to delete agent'));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+</script>
+{% endblock %}

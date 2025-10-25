@@ -831,6 +831,19 @@ def run_commit_monitor_callback(reviewer: SecurityReview, monitored_repo: Monito
     """
     print(f"\nAnalyzing {len(commits)} new commits in {monitored_repo.full_name}")
     
+    # Load repository-specific agent configuration if running as web service
+    if os.environ.get('DATABASE_URL'):
+        from .config_loader import agent_config
+        
+        try:
+            # Try to load repository-specific agent
+            if agent_config.load_for_repository(monitored_repo.full_name):
+                print(f"  ✓ Using repository-specific agent configuration")
+            else:
+                print(f"  ℹ Using main agent configuration")
+        except Exception as e:
+            print(f"  ⚠️ Failed to load repository-specific agent, using main agent: {e}")
+    
     # Show telegram configuration if present
     if monitored_repo.telegram_channel_id:
         print(f"  Telegram channel: {monitored_repo.telegram_channel_id}")

@@ -43,6 +43,9 @@ class Repository(Base):
     url = Column(String(500), nullable=False)  # Full GitHub URL
     branches = Column(JSON, nullable=False)  # Array of branch names
     
+    # Agent assignment
+    agent_id = Column(Integer, nullable=True)  # ID of the agent to use for this repository (NULL = use main agent)
+    
     # Telegram notification settings
     telegram_channel_id = Column(String(255))  # Optional telegram channel ID
     notify_default_channel = Column(Boolean, default=False, nullable=False)
@@ -64,6 +67,7 @@ class Repository(Base):
             'name': self.name,
             'url': self.url,
             'branches': self.branches,
+            'agent_id': self.agent_id,
             'telegram_channel_id': self.telegram_channel_id,
             'notify_default_channel': self.notify_default_channel,
             'is_active': self.is_active,
@@ -183,6 +187,50 @@ class FindingNote(Base):
             'note_text': self.note_text,
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Agent(Base):
+    """Database model for AI agents with customizable prompts."""
+    
+    __tablename__ = 'agents'
+    
+    # Primary key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Agent information
+    name = Column(String(255), nullable=False)
+    is_main = Column(Boolean, default=False, nullable=False)  # Main agent (from agent.json)
+    
+    # Agent prompts (stored as JSON)
+    prompts = Column(JSON, nullable=False)
+    
+    # Metadata
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_by = Column(String(255), nullable=False)  # Email of user who created it
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_by = Column(String(255), nullable=False)  # Email of user who last updated it
+    
+    # Indexing for performance
+    __table_args__ = (
+        Index('idx_agents_name', 'name'),
+        Index('idx_agents_is_main', 'is_main'),
+    )
+    
+    def __repr__(self):
+        return f"<Agent(id={self.id}, name={self.name}, is_main={self.is_main})>"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'is_main': self.is_main,
+            'prompts': self.prompts,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by': self.created_by,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by': self.updated_by,
         }
 
 
@@ -1761,6 +1809,306 @@ class DatabaseManager:
             return 0
         finally:
             session.close()
+    
+    # Agent management methods
+    def create_agent(self, name: str, prompts: Dict, created_by: str, is_main: bool = False) -> Optional[int]:
+        """
+        Create a new agent.
+        
+        Args:
+            name: Agent name
+            prompts: Agent prompts as dictionary
+            created_by: Email of user who created it
+            is_main: Whether this is the main agent
+            
+        Returns:
+            int: Agent ID if successful, None otherwise
+        """
+        session = self.get_session()
+        try:
+            # If this is being set as main, unset any existing main agent
+            if is_main:
+                existing_main = session.query(Agent).filter(Agent.is_main == True).first()
+                if existing_main:
+                    existing_main.is_main = False
+            
+            agent = Agent(
+                name=name,
+                is_main=is_main,
+                prompts=prompts,
+                created_by=created_by,
+                updated_by=created_by
+            )
+            
+            session.add(agent)
+            session.commit()
+            
+            logger.info(f"Created agent: {name} (id={agent.id}, main={is_main}) by {created_by}")
+            return agent.id
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to create agent {name}: {e}")
+            return None
+        finally:
+            session.close()
+    
+    def get_agent(self, agent_id: int) -> Optional[Agent]:
+        """
+        Get an agent by ID.
+        
+        Args:
+            agent_id: Agent ID
+            
+        Returns:
+            Agent object or None if not found
+        """
+        session = self.get_session()
+        try:
+            agent = session.query(Agent).filter(Agent.id == agent_id).first()
+            return agent
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve agent {agent_id}: {e}")
+            return None
+        finally:
+            session.close()
+    
+    def get_all_agents(self) -> List[Dict[str, Any]]:
+        """
+        Get all agents.
+        
+        Returns:
+            List of agent dictionaries
+        """
+        session = self.get_session()
+        try:
+            agents = session.query(Agent).order_by(Agent.is_main.desc(), Agent.name).all()
+            return [agent.to_dict() for agent in agents]
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve all agents: {e}")
+            return []
+        finally:
+            session.close()
+    
+    def get_main_agent(self) -> Optional[Agent]:
+        """
+        Get the main agent.
+        
+        Returns:
+            Agent object or None if not found
+        """
+        session = self.get_session()
+        try:
+            agent = session.query(Agent).filter(Agent.is_main == True).first()
+            return agent
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve main agent: {e}")
+            return None
+        finally:
+            session.close()
+    
+    def update_agent(self, agent_id: int, name: Optional[str] = None, prompts: Optional[Dict] = None, 
+                    updated_by: str = 'system') -> bool:
+        """
+        Update an agent.
+        
+        Args:
+            agent_id: Agent ID
+            name: Updated name
+            prompts: Updated prompts
+            updated_by: Email of user who updated it
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        session = self.get_session()
+        try:
+            agent = session.query(Agent).filter(Agent.id == agent_id).first()
+            if not agent:
+                logger.warning(f"Agent not found for update: {agent_id}")
+                return False
+            
+            # Update fields if provided
+            if name is not None:
+                agent.name = name
+            if prompts is not None:
+                agent.prompts = prompts
+            
+            agent.updated_by = updated_by
+            agent.updated_at = datetime.datetime.now(datetime.timezone.utc)
+            
+            session.commit()
+            logger.info(f"Updated agent {agent_id} by {updated_by}")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to update agent {agent_id}: {e}")
+            return False
+        finally:
+            session.close()
+    
+    def delete_agent(self, agent_id: int) -> bool:
+        """
+        Delete an agent.
+        
+        Args:
+            agent_id: Agent ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        session = self.get_session()
+        try:
+            agent = session.query(Agent).filter(Agent.id == agent_id).first()
+            if not agent:
+                logger.warning(f"Agent not found for deletion: {agent_id}")
+                return False
+            
+            # Prevent deletion of main agent
+            if agent.is_main:
+                logger.warning(f"Cannot delete main agent: {agent_id}")
+                return False
+            
+            # Update any repositories using this agent to use NULL (main agent)
+            repositories = session.query(Repository).filter(Repository.agent_id == agent_id).all()
+            for repo in repositories:
+                repo.agent_id = None
+            
+            session.delete(agent)
+            session.commit()
+            
+            logger.info(f"Deleted agent {agent_id}")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to delete agent {agent_id}: {e}")
+            return False
+        finally:
+            session.close()
+    
+    def import_agent_from_file(self, agent_file_path: str, created_by: str = 'system') -> Optional[int]:
+        """
+        Import the main agent from agent.json file.
+        
+        Args:
+            agent_file_path: Path to agent.json file
+            created_by: Email of user performing import
+            
+        Returns:
+            int: Agent ID if successful, None otherwise
+        """
+        try:
+            with open(agent_file_path, 'r') as f:
+                agent_data = json.load(f)
+            
+            prompts = agent_data.get('prompts', {})
+            
+            # Check if main agent already exists
+            existing_main = self.get_main_agent()
+            if existing_main:
+                # Update existing main agent
+                success = self.update_agent(
+                    agent_id=existing_main.id,
+                    prompts=prompts,
+                    updated_by=created_by
+                )
+                if success:
+                    logger.info(f"Updated main agent from {agent_file_path}")
+                    return existing_main.id
+                else:
+                    logger.error(f"Failed to update main agent from {agent_file_path}")
+                    return None
+            else:
+                # Create new main agent
+                agent_id = self.create_agent(
+                    name="Main Agent",
+                    prompts=prompts,
+                    created_by=created_by,
+                    is_main=True
+                )
+                if agent_id:
+                    logger.info(f"Imported main agent from {agent_file_path}")
+                else:
+                    logger.error(f"Failed to import main agent from {agent_file_path}")
+                return agent_id
+                
+        except Exception as e:
+            logger.error(f"Failed to import agent from {agent_file_path}: {e}")
+            return None
+    
+    def update_repository_agent(self, repo_name: str, agent_id: Optional[int], updated_by: str = 'system') -> bool:
+        """
+        Update the agent assigned to a repository.
+        
+        Args:
+            repo_name: Repository name
+            agent_id: Agent ID (None for main agent)
+            updated_by: Email of user who updated it
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        session = self.get_session()
+        try:
+            repository = session.query(Repository).filter(Repository.name == repo_name).first()
+            if not repository:
+                logger.warning(f"Repository not found for agent update: {repo_name}")
+                return False
+            
+            repository.agent_id = agent_id
+            repository.updated_by = updated_by
+            repository.updated_at = datetime.datetime.now(datetime.timezone.utc)
+            
+            session.commit()
+            logger.info(f"Updated agent for repository {repo_name} to agent_id={agent_id} by {updated_by}")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to update repository agent for {repo_name}: {e}")
+            return False
+        finally:
+            session.close()
+    
+    def get_repository_agent(self, repo_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the agent for a specific repository.
+        
+        Args:
+            repo_name: Repository name
+            
+        Returns:
+            Agent dictionary or None if not found
+        """
+        session = self.get_session()
+        try:
+            repository = session.query(Repository).filter(Repository.name == repo_name).first()
+            if not repository:
+                logger.warning(f"Repository not found: {repo_name}")
+                return None
+            
+            if repository.agent_id:
+                agent = session.query(Agent).filter(Agent.id == repository.agent_id).first()
+                if agent:
+                    return agent.to_dict()
+            
+            # Return main agent if no specific agent assigned
+            main_agent = session.query(Agent).filter(Agent.is_main == True).first()
+            if main_agent:
+                return main_agent.to_dict()
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get agent for repository {repo_name}: {e}")
+            return None
+        finally:
+            session.close()
 
 
 # Global database manager instance
@@ -1783,6 +2131,17 @@ def get_database_manager() -> DatabaseManager:
             migrate_database_schema(_db_manager)
         except Exception as e:
             logger.warning(f"Database migration failed during initialization: {e}")
+        
+        # Import main agent from agent.json if not already imported
+        try:
+            agent_file_path = os.path.join(os.path.dirname(__file__), '..', 'agent.json')
+            if os.path.exists(agent_file_path):
+                _db_manager.import_agent_from_file(agent_file_path, created_by='system')
+                logger.info("Main agent imported/updated from agent.json")
+            else:
+                logger.warning(f"agent.json not found at {agent_file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to import main agent from agent.json: {e}")
     return _db_manager
 
 
@@ -2066,6 +2425,39 @@ def migrate_database_schema(db_manager: DatabaseManager):
         # Create index on created_at for performance
         """
         CREATE INDEX IF NOT EXISTS idx_repo_docs_created_at ON repository_documents(created_at);
+        """,
+        
+        # Create agents table
+        """
+        CREATE TABLE IF NOT EXISTS agents (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            is_main BOOLEAN NOT NULL DEFAULT FALSE,
+            prompts JSON NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            created_by VARCHAR(255) NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_by VARCHAR(255) NOT NULL
+        );
+        """,
+        
+        # Create indexes on agents table
+        """
+        CREATE INDEX IF NOT EXISTS idx_agents_name ON agents(name);
+        """,
+        
+        """
+        CREATE INDEX IF NOT EXISTS idx_agents_is_main ON agents(is_main);
+        """,
+        
+        # Add agent_id column to repositories table
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'repositories' AND column_name = 'agent_id') THEN
+                ALTER TABLE repositories ADD COLUMN agent_id INTEGER;
+            END IF;
+        END$$;
         """
     ]
     

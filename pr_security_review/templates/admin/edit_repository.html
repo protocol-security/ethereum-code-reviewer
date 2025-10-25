@@ -217,6 +217,29 @@
                     <div class="form-help">Comma-separated list of branches to monitor.</div>
                 </div>
 
+                <!-- Agent Selection -->
+                <div class="form-group">
+                    <label for="agent_id" class="form-label">
+                        <i class="fas fa-robot"></i>
+                        Security Analysis Agent
+                    </label>
+                    <select 
+                        id="agent_id" 
+                        name="agent_id" 
+                        class="form-input"
+                    >
+                        <option value="">Main Agent (Default)</option>
+                        {% for agent in agents %}
+                            {% if not agent.is_main %}
+                            <option value="{{ agent.id }}" {% if repository.agent_id == agent.id %}selected{% endif %}>
+                                {{ agent.name }}
+                            </option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <div class="form-help">Select which AI agent to use for security analysis. Leave as "Main Agent" to use the default configuration.</div>
+                </div>
+
                 <!-- Telegram Channel ID -->
                 <div class="form-group">
                     <label for="telegram_channel_id" class="form-label">

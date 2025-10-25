@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Agent - Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+    .form-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    
+    .page-header {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    
+    .page-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+    }
+    
+    .page-header p {
+        color: #718096;
+        font-size: 1rem;
+    }
+    
+    .back-button {
+        margin-bottom: 2rem;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+        display: block;
+        font-weight: 500;
+        color: #4a5568;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .form-label i {
+        color: #667eea;
+        margin-right: 0.5rem;
+        width: 16px;
+    }
+    
+    .form-input, .form-textarea {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        background: white;
+        font-family: 'Monaco', 'Consolas', monospace;
+    }
+    
+    .form-textarea {
+        min-height: 120px;
+        resize: vertical;
+    }
+    
+    .form-input:focus, .form-textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-help {
+        font-size: 0.75rem;
+        color: #9ca3af;
+        margin-top: 0.25rem;
+    }
+    
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        padding-top: 2rem;
+        border-top: 1px solid #e2e8f0;
+        margin-top: 2rem;
+    }
+    
+    .required {
+        color: #e53e3e;
+    }
+    
+    .prompt-section {
+        background: #f7fafc;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+    }
+    
+    .prompt-section-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .warning-banner {
+        background: #fffbeb;
+        border-left: 4px solid #f59e0b;
+        padding: 1rem;
+        margin-bottom: 2rem;
+        border-radius: 0 8px 8px 0;
+    }
+    
+    .warning-banner i {
+        color: #f59e0b;
+        margin-right: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-robot"></i>
+            Edit Agent
+        </h1>
+        <p>Update agent configuration for <strong>{{ agent.name }}</strong></p>
+    </div>
+
+    <div class="back-button">
+        <a href="{{ url_for('admin_agents') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i>
+            Back to Agents
+        </a>
+    </div>
+
+    {% if agent.is_main %}
+    <div class="warning-banner">
+        <i class="fas fa-exclamation-triangle"></i>
+        <strong>Main Agent:</strong> This is the default agent used for all repositories unless a specific agent is assigned. Only Owners can edit the main agent.
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-content">
+            <form method="POST">
+                <!-- Agent Name -->
+                <div class="form-group">
+                    <label for="name" class="form-label">
+                        <i class="fas fa-tag"></i>
+                        Agent Name <span class="required">*</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        id="name" 
+                        name="name" 
+                        required 
+                        value="{{ agent.name }}"
+                        class="form-input"
+                        {% if agent.is_main %}readonly{% endif %}
+                        style="font-family: 'Inter', sans-serif;"
+                    >
+                    <div class="form-help">A descriptive name for this agent.</div>
+                </div>
+
+                <!-- Security Prompts -->
+                <div class="prompt-section">
+                    <div class="prompt-section-title">
+                        <i class="fas fa-shield-alt"></i>
+                        Security Prompt Configuration
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="security_intro" class="form-label">
+                            Introduction
+                        </label>
+                        <textarea 
+                            id="security_intro" 
+                            name="security_intro" 
+                            class="form-textarea"
+                        >{{ agent.prompts.security.intro if agent.prompts.security else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="security_focus_areas" class="form-label">
+                            Focus Areas
+                        </label>
+                        <textarea 
+                            id="security_focus_areas" 
+                            name="security_focus_areas" 
+                            class="form-textarea"
+                        >{{ agent.prompts.security.focus_areas if agent.prompts.security else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="security_important_notes" class="form-label">
+                            Important Notes
+                        </label>
+                        <textarea 
+                            id="security_important_notes" 
+                            name="security_important_notes" 
+                            class="form-textarea"
+                            style="min-height: 150px;"
+                        >{{ agent.prompts.security.important_notes if agent.prompts.security else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="security_examples" class="form-label">
+                            Examples
+                        </label>
+                        <textarea 
+                            id="security_examples" 
+                            name="security_examples" 
+                            class="form-textarea"
+                            style="min-height: 150px;"
+                        >{{ agent.prompts.security.examples if agent.prompts.security else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="security_response_format" class="form-label">
+                            Response Format
+                        </label>
+                        <textarea 
+                            id="security_response_format" 
+                            name="security_response_format" 
+                            class="form-textarea"
+                            style="min-height: 200px;"
+                        >{{ agent.prompts.security.response_format if agent.prompts.security else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="security_no_vulns_response" class="form-label">
+                            No Vulnerabilities Response
+                        </label>
+                        <textarea 
+                            id="security_no_vulns_response" 
+                            name="security_no_vulns_response" 
+                            class="form-textarea"
+                        >{{ agent.prompts.security.no_vulns_response if agent.prompts.security else '' }}</textarea>
+                    </div>
+                </div>
+
+                <!-- Skeptical Verification -->
+                <div class="prompt-section">
+                    <div class="prompt-section-title">
+                        <i class="fas fa-search"></i>
+                        Skeptical Verification Configuration
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="skeptical_intro" class="form-label">
+                            Introduction
+                        </label>
+                        <textarea 
+                            id="skeptical_intro" 
+                            name="skeptical_intro" 
+                            class="form-textarea"
+                        >{{ agent.prompts.skeptical_verification.intro if agent.prompts.skeptical_verification else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="skeptical_critical_questions" class="form-label">
+                            Critical Questions
+                        </label>
+                        <textarea 
+                            id="skeptical_critical_questions" 
+                            name="skeptical_critical_questions" 
+                            class="form-textarea"
+                            style="min-height: 150px;"
+                        >{{ agent.prompts.skeptical_verification.critical_questions if agent.prompts.skeptical_verification else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="skeptical_be_critical" class="form-label">
+                            Be Critical
+                        </label>
+                        <textarea 
+                            id="skeptical_be_critical" 
+                            name="skeptical_be_critical" 
+                            class="form-textarea"
+                            style="min-height: 150px;"
+                        >{{ agent.prompts.skeptical_verification.be_critical if agent.prompts.skeptical_verification else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="skeptical_only_confirm" class="form-label">
+                            Only Confirm
+                        </label>
+                        <textarea 
+                            id="skeptical_only_confirm" 
+                            name="skeptical_only_confirm" 
+                            class="form-textarea"
+                        >{{ agent.prompts.skeptical_verification.only_confirm if agent.prompts.skeptical_verification else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="skeptical_response_format" class="form-label">
+                            Response Format
+                        </label>
+                        <textarea 
+                            id="skeptical_response_format" 
+                            name="skeptical_response_format" 
+                            class="form-textarea"
+                            style="min-height: 120px;"
+                        >{{ agent.prompts.skeptical_verification.response_format if agent.prompts.skeptical_verification else '' }}</textarea>
+                    </div>
+                </div>
+
+                <!-- Synthesis -->
+                <div class="prompt-section">
+                    <div class="prompt-section-title">
+                        <i class="fas fa-layer-group"></i>
+                        Synthesis Configuration
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="synthesis_intro" class="form-label">
+                            Introduction
+                        </label>
+                        <textarea 
+                            id="synthesis_intro" 
+                            name="synthesis_intro" 
+                            class="form-textarea"
+                        >{{ agent.prompts.synthesis.intro if agent.prompts.synthesis else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="synthesis_instruction" class="form-label">
+                            Instruction
+                        </label>
+                        <textarea 
+                            id="synthesis_instruction" 
+                            name="synthesis_instruction" 
+                            class="form-textarea"
+                        >{{ agent.prompts.synthesis.instruction if agent.prompts.synthesis else '' }}</textarea>
+                    </div>
+                </div>
+
+                <!-- System Prompts -->
+                <div class="prompt-section">
+                    <div class="prompt-section-title">
+                        <i class="fas fa-cog"></i>
+                        System Prompts Configuration
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="system_default" class="form-label">
+                            Default System Prompt
+                        </label>
+                        <textarea 
+                            id="system_default" 
+                            name="system_default" 
+                            class="form-textarea"
+                        >{{ agent.prompts.system_prompts.default if agent.prompts.system_prompts else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="system_anthropic" class="form-label">
+                            Anthropic System Prompt
+                        </label>
+                        <textarea 
+                            id="system_anthropic" 
+                            name="system_anthropic" 
+                            class="form-textarea"
+                        >{{ agent.prompts.system_prompts.anthropic if agent.prompts.system_prompts else '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="system_synthesize" class="form-label">
+                            Synthesize System Prompt
+                        </label>
+                        <textarea 
+                            id="system_synthesize" 
+                            name="system_synthesize" 
+                            class="form-textarea"
+                        >{{ agent.prompts.system_prompts.synthesize if agent.prompts.system_prompts else '' }}</textarea>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <a href="{{ url_for('admin_agents') }}" class="btn btn-secondary">
+                        Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i>
+                        Update Agent
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
