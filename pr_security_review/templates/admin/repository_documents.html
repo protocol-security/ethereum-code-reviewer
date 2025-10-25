@@ -649,7 +649,7 @@ uploadAllBtn.addEventListener('click', async () => {
                 }
             }, 200);
             
-            const response = await fetch('{{ url_for("admin_upload_document", repo_name=repository.name) }}', {
+            const response = await fetch('{{ url_for("admin_bp.repositories_bp.upload_document", repo_name=repository.name) }}', {
                 method: 'POST',
                 body: formData
             });
@@ -713,7 +713,7 @@ async function deleteDocument(docId, filename) {
     if (!confirm('Delete "' + filename + '"?')) return;
     
     try {
-        const response = await fetch('{{ url_for("admin_delete_document", repo_name=repository.name, doc_id=0) }}'.replace('/0/', '/' + docId + '/'), {
+        const response = await fetch('{{ url_for("admin_bp.repositories_bp.delete_document", repo_name=repository.name, doc_id=0) }}'.replace('/0/', '/' + docId + '/'), {
             method: 'POST'
         });
         
