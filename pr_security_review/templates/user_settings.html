@@ -506,7 +506,7 @@
             <p style="margin: 0.5rem 0 0 0; color: #4a5568; font-size: 0.875rem;">Control when you receive email notifications about security findings</p>
         </div>
         <div class="card-content">
-            <form method="POST" action="{{ url_for('user_settings') }}">
+            <form method="POST" action="{{ url_for('findings_bp.user_settings') }}">
                 <div class="form-checkbox">
                     <input type="checkbox" id="email_notifications" name="email_notifications" {{ 'checked' if user_data.email_notifications_enabled else '' }}>
                     <div class="checkbox-content">

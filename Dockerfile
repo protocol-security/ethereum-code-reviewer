@@ -7,4 +7,4 @@ WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir -e .
 
-ENTRYPOINT ["python", "-u", "-m", "pr_security_review"]
+ENTRYPOINT ["gunicorn", "pr_security_review.web:create_app()", "--bind", "0.0.0.0:5000", "--workers", "4"]
