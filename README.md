@@ -218,7 +218,7 @@ The tool will:
 
 #### Single File Analysis
 
-You can also analyze individual files:
+You can analyze individual files:
 
 ```bash
 # Analyze a specific file
@@ -401,7 +401,6 @@ When the `--notify-clean-commits` flag is enabled (or `NOTIFY_CLEAN_COMMITS=true
 - Commit hash with link to GitHub
 - Author name 
 - Commit message
-
 
 
 ### Database Management
