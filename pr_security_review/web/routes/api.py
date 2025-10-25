@@ -221,9 +221,19 @@ def scan_commit():
             try:
                 # Import SecurityReview class
                 from ...__main__ import SecurityReview, CommitInfo
+                from ...config_loader import agent_config
+                
+                # Load repository-specific agent configuration if available
+                try:
+                    if agent_config.load_for_repository(repo_name):
+                        logger.info(f"Loaded repository-specific agent configuration for {repo_name}")
+                    else:
+                        logger.info(f"Using main agent configuration for {repo_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to load repository-specific agent, using main agent: {e}")
                 
                 # Get GitHub token
-                github_token = os.environ.get('GITHUB_TOKEN')
+                github_token = os.getenv('GITHUB_TOKEN')
                 if not github_token:
                     logger.error("GITHUB_TOKEN not configured")
                     return

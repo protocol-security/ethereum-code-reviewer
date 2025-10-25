@@ -497,16 +497,17 @@ class DatabaseManager:
             finding_uuid = str(finding.uuid)
             logger.info(f"Stored security finding with UUID: {finding_uuid}")
             
-            # Send email notification for new finding
-            try:
-                from .email_notifications import get_email_service
-                email_service = get_email_service()
-                if email_service.is_enabled():
-                    finding_dict = finding.to_dict()
-                    email_service.send_new_finding_notification(self, finding_dict)
-            except Exception as email_error:
-                logger.error(f"Failed to send email notification for new finding {finding_uuid}: {email_error}")
-                # Don't fail the entire operation if email fails
+            # Send email notification for new finding (only if vulnerabilities found)
+            if analysis.get('has_vulnerabilities', False):
+                try:
+                    from .email_notifications import get_email_service
+                    email_service = get_email_service()
+                    if email_service.is_enabled():
+                        finding_dict = finding.to_dict()
+                        email_service.send_new_finding_notification(self, finding_dict)
+                except Exception as email_error:
+                    logger.error(f"Failed to send email notification for new finding {finding_uuid}: {email_error}")
+                    # Don't fail the entire operation if email fails
             
             return finding_uuid
             
