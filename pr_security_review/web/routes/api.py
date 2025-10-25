@@ -178,6 +178,86 @@ def triage_statistics():
         return jsonify({'error': 'Failed to fetch statistics'}), 500
 
 
+@api_bp.route('/api-keys', methods=['GET', 'POST', 'DELETE'])
+@login_required
+def manage_api_keys():
+    """Manage API keys for the current user."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 503
+    
+    try:
+        auth_service = get_auth_service()
+        user_email = auth_service.get_current_user()['email']
+        db_manager = get_database_manager()
+        
+        if request.method == 'GET':
+            # Get all API keys for the user
+            api_keys = db_manager.get_user_api_keys(user_email)
+            return jsonify({'success': True, 'api_keys': api_keys})
+        
+        elif request.method == 'POST':
+            # Create a new API key
+            data = request.get_json()
+            if not data or not data.get('name'):
+                return jsonify({'error': 'API key name is required'}), 400
+            
+            name = data.get('name').strip()
+            if not name:
+                return jsonify({'error': 'API key name cannot be empty'}), 400
+            
+            # Generate the API key
+            api_key = db_manager.create_api_key(user_email, name)
+            
+            if api_key:
+                # Get the user's accessible repositories for the curl example
+                accessible_repos = db_manager.get_user_repository_access(user_email)
+                example_repo = accessible_repos[0] if accessible_repos else 'ethereum/go-ethereum'
+                
+                # Generate curl example
+                import os
+                base_url = os.getenv('BASE_URL', request.host_url.rstrip('/'))
+                curl_example = f"""curl -X POST {base_url}/api/v1/alerts \\
+  -H "Authorization: Bearer {api_key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{{
+    "repository": "{example_repo}",
+    "title": "Potential vulnerability found",
+    "description": "Description of the vulnerability",
+    "severity": "high",
+    "file_path": "contracts/MyContract.sol",
+    "line_number": 42
+  }}'"""
+                
+                return jsonify({
+                    'success': True,
+                    'api_key': api_key,
+                    'curl_example': curl_example,
+                    'message': 'API key created successfully. Copy it now - you won\'t be able to see it again!'
+                })
+            else:
+                return jsonify({'error': 'Failed to create API key'}), 500
+        
+        elif request.method == 'DELETE':
+            # Revoke/delete an API key
+            data = request.get_json()
+            if not data or not data.get('key_id'):
+                return jsonify({'error': 'API key ID is required'}), 400
+            
+            key_id = data.get('key_id')
+            
+            # Delete the key
+            success = db_manager.delete_api_key(key_id, user_email)
+            
+            if success:
+                return jsonify({'success': True, 'message': 'API key deleted successfully'})
+            else:
+                return jsonify({'error': 'Failed to delete API key'}), 500
+    
+    except Exception as e:
+        logger.error(f"Error managing API keys: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @api_bp.route('/scan-commit', methods=['POST'])
 @login_required
 def scan_commit():

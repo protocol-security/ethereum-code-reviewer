@@ -529,5 +529,426 @@
             </form>
         </div>
     </div>
+
+    <div class="card" style="margin-top: 2rem;">
+        <div class="card-header">
+            <h2 style="margin: 0; font-size: 1.25rem; font-weight: 600; color: #2d3748; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-key"></i>
+                API Keys
+            </h2>
+            <p style="margin: 0.5rem 0 0 0; color: #4a5568; font-size: 0.875rem;">Manage API keys for programmatic access to submit vulnerability alerts</p>
+        </div>
+        <div class="card-content">
+            <div id="api-keys-container">
+                <div style="text-align: center; padding: 2rem; color: #718096;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 2rem;"></i>
+                    <p style="margin-top: 1rem;">Loading API keys...</p>
+                </div>
+            </div>
+            
+            <button type="button" class="btn btn-primary" onclick="createApiKey()" style="margin-top: 1rem;">
+                <i class="fas fa-plus"></i>
+                Generate New API Key
+            </button>
+        </div>
+    </div>
 </div>
+
+<style>
+    .api-key-item {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .api-key-info {
+        flex: 1;
+    }
+    
+    .api-key-name {
+        font-weight: 600;
+        color: #2d3748;
+        font-size: 0.95rem;
+    }
+    
+    .api-key-prefix {
+        font-family: 'Courier New', monospace;
+        color: #667eea;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+    }
+    
+    .api-key-meta {
+        font-size: 0.75rem;
+        color: #718096;
+        margin-top: 0.5rem;
+    }
+    
+    .api-key-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .btn-danger {
+        background: #f56565;
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .btn-danger:hover {
+        background: #e53e3e;
+    }
+    
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-content {
+        background-color: #fefefe;
+        margin: 10% auto;
+        padding: 2rem;
+        border-radius: 12px;
+        max-width: 600px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    
+    .modal-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+    }
+    
+    .close {
+        color: #a0aec0;
+        font-size: 2rem;
+        font-weight: bold;
+        cursor: pointer;
+        line-height: 1;
+    }
+    
+    .close:hover {
+        color: #2d3748;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+        display: block;
+        font-weight: 500;
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .form-input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        box-sizing: border-box;
+    }
+    
+    .form-input:focus {
+        outline: none;
+        border-color: #667eea;
+    }
+    
+    .code-block {
+        background: #1a202c;
+        color: #e2e8f0;
+        padding: 1rem;
+        border-radius: 6px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-break: break-all;
+        margin-top: 1rem;
+        position: relative;
+    }
+    
+    .copy-button {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: #2d3748;
+        color: white;
+        border: none;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        cursor: pointer;
+    }
+    
+    .copy-button:hover {
+        background: #4a5568;
+    }
+    
+    .warning-box {
+        background: #fef5e7;
+        border: 1px solid #f6e05e;
+        border-radius: 6px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        color: #744210;
+        font-size: 0.875rem;
+    }
+    
+    .api-key-display {
+        background: #f0fff4;
+        border: 2px solid #9ae6b4;
+        border-radius: 6px;
+        padding: 1rem;
+        margin: 1rem 0;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        word-break: break-all;
+        color: #22543d;
+    }
+</style>
+
+<script>
+    let apiKeys = [];
+    
+    // Load API keys on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadApiKeys();
+    });
+    
+    async function loadApiKeys() {
+        try {
+            const response = await fetch('/api/api-keys');
+            const data = await response.json();
+            
+            if (data.success) {
+                apiKeys = data.api_keys;
+                renderApiKeys();
+            } else {
+                showError('Failed to load API keys');
+            }
+        } catch (error) {
+            showError('Error loading API keys: ' + error.message);
+        }
+    }
+    
+    function renderApiKeys() {
+        const container = document.getElementById('api-keys-container');
+        
+        if (apiKeys.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: #718096;">
+                    <i class="fas fa-key" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <p>No API keys yet. Generate one to get started.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = apiKeys.map(key => `
+            <div class="api-key-item">
+                <div class="api-key-info">
+                    <div class="api-key-name">
+                        <i class="fas fa-key"></i> ${escapeHtml(key.name)}
+                        ${!key.is_active ? '<span style="color: #f56565; font-size: 0.75rem;">(Revoked)</span>' : ''}
+                    </div>
+                    <div class="api-key-prefix">${escapeHtml(key.key_prefix)}...</div>
+                    <div class="api-key-meta">
+                        Created: ${new Date(key.created_at).toLocaleDateString()}
+                        ${key.last_used_at ? ` | Last used: ${new Date(key.last_used_at).toLocaleDateString()}` : ' | Never used'}
+                        ${key.usage_count ? ` | Used ${key.usage_count} times` : ''}
+                    </div>
+                </div>
+                <div class="api-key-actions">
+                    <button class="btn-danger" onclick="deleteApiKey(${key.id}, '${escapeHtml(key.name)}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    function createApiKey() {
+        const modal = document.getElementById('apiKeyModal');
+        if (!modal) {
+            createApiKeyModal();
+        }
+        document.getElementById('apiKeyModal').style.display = 'block';
+        document.getElementById('apiKeyName').value = '';
+        document.getElementById('apiKeyResult').style.display = 'none';
+    }
+    
+    function createApiKeyModal() {
+        const modalHtml = `
+            <div id="apiKeyModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 class="modal-title">Generate API Key</h2>
+                        <span class="close" onclick="closeModal('apiKeyModal')">&times;</span>
+                    </div>
+                    
+                    <div id="apiKeyForm">
+                        <div class="form-group">
+                            <label class="form-label" for="apiKeyName">API Key Name</label>
+                            <input type="text" id="apiKeyName" class="form-input" placeholder="e.g., Fuzzer Integration" required>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="generateApiKey()">
+                            <i class="fas fa-key"></i> Generate Key
+                        </button>
+                    </div>
+                    
+                    <div id="apiKeyResult" style="display: none;">
+                        <div class="warning-box">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Important:</strong> Copy this API key now. You won't be able to see it again!
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Your API Key</label>
+                            <div class="api-key-display" id="generatedApiKey"></div>
+                            <button class="btn btn-primary" onclick="copyToClipboard(document.getElementById('generatedApiKey').textContent)">
+                                <i class="fas fa-copy"></i> Copy Key
+                            </button>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Example cURL Command</label>
+                            <div class="code-block">
+                                <button class="copy-button" onclick="copyToClipboard(document.getElementById('curlExample').textContent)">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                                <div id="curlExample"></div>
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="closeModal('apiKeyModal'); loadApiKeys();">
+                            <i class="fas fa-check"></i> Done
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+    
+    async function generateApiKey() {
+        const name = document.getElementById('apiKeyName').value.trim();
+        
+        if (!name) {
+            alert('Please enter a name for the API key');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/api-keys', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name: name })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('apiKeyForm').style.display = 'none';
+                document.getElementById('apiKeyResult').style.display = 'block';
+                document.getElementById('generatedApiKey').textContent = data.api_key;
+                document.getElementById('curlExample').textContent = data.curl_example;
+            } else {
+                alert('Error: ' + (data.error || 'Failed to generate API key'));
+            }
+        } catch (error) {
+            alert('Error generating API key: ' + error.message);
+        }
+    }
+    
+    async function deleteApiKey(keyId, keyName) {
+        if (!confirm(`Are you sure you want to delete the API key "${keyName}"? This action cannot be undone.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/api-keys', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ key_id: keyId })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                loadApiKeys();
+            } else {
+                alert('Error: ' + (data.error || 'Failed to delete API key'));
+            }
+        } catch (error) {
+            alert('Error deleting API key: ' + error.message);
+        }
+    }
+    
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+    
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+        });
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function showError(message) {
+        document.getElementById('api-keys-container').innerHTML = `
+            <div style="background: #fed7d7; border: 1px solid #fc8181; border-radius: 6px; padding: 1rem; color: #c53030;">
+                <i class="fas fa-exclamation-circle"></i> ${escapeHtml(message)}
+            </div>
+        `;
+    }
+    
+    // Close modal when clicking outside of it
+    window.onclick = function(event) {
+        const modal = document.getElementById('apiKeyModal');
+        if (modal && event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+</script>
 {% endblock %}

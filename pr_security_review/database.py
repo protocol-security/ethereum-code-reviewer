@@ -158,6 +158,60 @@ class User(Base):
         return self.repository_access or []
 
 
+class ApiKey(Base):
+    """Database model for user API keys."""
+    
+    __tablename__ = 'api_keys'
+    
+    # Primary key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # User association
+    user_email = Column(String(255), nullable=False)
+    
+    # API key (hashed)
+    key_hash = Column(String(255), nullable=False, unique=True)
+    
+    # Key metadata
+    name = Column(String(255), nullable=False)  # User-friendly name for the key
+    key_prefix = Column(String(20), nullable=False)  # First few characters for identification
+    
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Usage tracking
+    last_used_at = Column(DateTime(timezone=True))
+    usage_count = Column(Integer, default=0, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    revoked_at = Column(DateTime(timezone=True))
+    
+    # Indexing for performance
+    __table_args__ = (
+        Index('idx_api_keys_user_email', 'user_email'),
+        Index('idx_api_keys_key_hash', 'key_hash'),
+        Index('idx_api_keys_is_active', 'is_active'),
+    )
+    
+    def __repr__(self):
+        return f"<ApiKey(id={self.id}, user={self.user_email}, name={self.name}, active={self.is_active})>"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': self.id,
+            'user_email': self.user_email,
+            'name': self.name,
+            'key_prefix': self.key_prefix,
+            'is_active': self.is_active,
+            'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None,
+            'usage_count': self.usage_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'revoked_at': self.revoked_at.isoformat() if self.revoked_at else None,
+        }
+
+
 class FindingNote(Base):
     """Database model for finding notes."""
     
@@ -2110,6 +2164,208 @@ class DatabaseManager:
             return None
         finally:
             session.close()
+    
+    # API key management methods
+    def create_api_key(self, user_email: str, name: str) -> Optional[str]:
+        """
+        Create a new API key for a user.
+        
+        Args:
+            user_email: User's email address
+            name: User-friendly name for the key
+            
+        Returns:
+            str: The generated API key (plaintext, only shown once), or None if creation failed
+        """
+        import secrets
+        import hashlib
+        
+        session = self.get_session()
+        try:
+            # Verify user exists
+            user = session.query(User).filter(User.email == user_email, User.is_active == True).first()
+            if not user:
+                logger.warning(f"User not found for API key creation: {user_email}")
+                return None
+            
+            # Generate a secure random API key
+            api_key = f"etr_{secrets.token_urlsafe(32)}"
+            
+            # Hash the key for storage
+            key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+            
+            # Store first 8 characters as prefix for identification
+            key_prefix = api_key[:12]
+            
+            # Create API key record
+            api_key_record = ApiKey(
+                user_email=user_email,
+                key_hash=key_hash,
+                name=name,
+                key_prefix=key_prefix
+            )
+            
+            session.add(api_key_record)
+            session.commit()
+            
+            logger.info(f"Created API key '{name}' for user {user_email}")
+            
+            # Return the plaintext key (this is the only time it will be available)
+            return api_key
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to create API key for {user_email}: {e}")
+            return None
+        finally:
+            session.close()
+    
+    def get_user_api_keys(self, user_email: str) -> List[Dict[str, Any]]:
+        """
+        Get all API keys for a user.
+        
+        Args:
+            user_email: User's email address
+            
+        Returns:
+            List of API key dictionaries (without the actual keys)
+        """
+        session = self.get_session()
+        try:
+            api_keys = session.query(ApiKey).filter(
+                ApiKey.user_email == user_email
+            ).order_by(ApiKey.created_at.desc()).all()
+            
+            return [key.to_dict() for key in api_keys]
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve API keys for {user_email}: {e}")
+            return []
+        finally:
+            session.close()
+    
+    def validate_api_key(self, api_key: str) -> Optional[str]:
+        """
+        Validate an API key and return the associated user email.
+        
+        Args:
+            api_key: The API key to validate
+            
+        Returns:
+            str: User email if valid, None otherwise
+        """
+        import hashlib
+        
+        session = self.get_session()
+        try:
+            # Hash the provided key
+            key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+            
+            # Look up the key
+            api_key_record = session.query(ApiKey).filter(
+                ApiKey.key_hash == key_hash,
+                ApiKey.is_active == True
+            ).first()
+            
+            if not api_key_record:
+                logger.debug("Invalid or inactive API key")
+                return None
+            
+            # Verify user is still active
+            user = session.query(User).filter(
+                User.email == api_key_record.user_email,
+                User.is_active == True
+            ).first()
+            
+            if not user:
+                logger.warning(f"API key belongs to inactive user: {api_key_record.user_email}")
+                return None
+            
+            # Update usage statistics
+            api_key_record.last_used_at = datetime.datetime.now(datetime.timezone.utc)
+            api_key_record.usage_count += 1
+            session.commit()
+            
+            logger.debug(f"Validated API key for user {user.email}")
+            return user.email
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to validate API key: {e}")
+            return None
+        finally:
+            session.close()
+    
+    def revoke_api_key(self, key_id: int, user_email: str) -> bool:
+        """
+        Revoke an API key.
+        
+        Args:
+            key_id: ID of the API key to revoke
+            user_email: Email of the user revoking the key (must be the owner)
+            
+        Returns:
+            bool: True if revoked successfully, False otherwise
+        """
+        session = self.get_session()
+        try:
+            api_key = session.query(ApiKey).filter(
+                ApiKey.id == key_id,
+                ApiKey.user_email == user_email
+            ).first()
+            
+            if not api_key:
+                logger.warning(f"API key not found or doesn't belong to user: {key_id}")
+                return False
+            
+            api_key.is_active = False
+            api_key.revoked_at = datetime.datetime.now(datetime.timezone.utc)
+            session.commit()
+            
+            logger.info(f"Revoked API key {key_id} ({api_key.name}) for user {user_email}")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to revoke API key {key_id}: {e}")
+            return False
+        finally:
+            session.close()
+    
+    def delete_api_key(self, key_id: int, user_email: str) -> bool:
+        """
+        Delete an API key permanently.
+        
+        Args:
+            key_id: ID of the API key to delete
+            user_email: Email of the user deleting the key (must be the owner)
+            
+        Returns:
+            bool: True if deleted successfully, False otherwise
+        """
+        session = self.get_session()
+        try:
+            api_key = session.query(ApiKey).filter(
+                ApiKey.id == key_id,
+                ApiKey.user_email == user_email
+            ).first()
+            
+            if not api_key:
+                logger.warning(f"API key not found or doesn't belong to user: {key_id}")
+                return False
+            
+            session.delete(api_key)
+            session.commit()
+            
+            logger.info(f"Deleted API key {key_id} ({api_key.name}) for user {user_email}")
+            return True
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to delete API key {key_id}: {e}")
+            return False
+        finally:
+            session.close()
 
 
 # Global database manager instance
@@ -2459,6 +2715,35 @@ def migrate_database_schema(db_manager: DatabaseManager):
                 ALTER TABLE repositories ADD COLUMN agent_id INTEGER;
             END IF;
         END$$;
+        """,
+        
+        # Create api_keys table
+        """
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id SERIAL PRIMARY KEY,
+            user_email VARCHAR(255) NOT NULL,
+            key_hash VARCHAR(255) NOT NULL UNIQUE,
+            name VARCHAR(255) NOT NULL,
+            key_prefix VARCHAR(20) NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            last_used_at TIMESTAMP WITH TIME ZONE,
+            usage_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            revoked_at TIMESTAMP WITH TIME ZONE
+        );
+        """,
+        
+        # Create indexes on api_keys table
+        """
+        CREATE INDEX IF NOT EXISTS idx_api_keys_user_email ON api_keys(user_email);
+        """,
+        
+        """
+        CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+        """,
+        
+        """
+        CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON api_keys(is_active);
         """
     ]
     
