@@ -45,3 +45,38 @@ graceful_timeout = 30
 # SSL (if using SSL termination at Gunicorn level)
 # keyfile = 'path/to/keyfile'
 # certfile = 'path/to/certfile'
+
+
+def post_fork(server, worker):
+    """
+    Called after a worker process is forked.
+    
+    This is used to start the monitoring service only in the first worker
+    to avoid duplicate monitoring across multiple workers.
+    """
+    # Only start monitoring in worker 1 to avoid duplicates
+    if worker.age == 0 and os.environ.get('MONITOR_CONTINUOUS', '').lower() in ('true', 'yes', '1'):
+        # Get the worker number (workers are numbered starting from 1)
+        worker_num = worker.pid % workers
+        
+        if worker_num == 1:  # Start monitoring only in the first worker
+            server.log.info(f"🤖 Worker {worker.pid}: Starting monitoring service")
+            
+            # Import and start monitoring
+            try:
+                from pr_security_review.web import start_monitoring_service
+                start_monitoring_service()
+            except Exception as e:
+                server.log.error(f"❌ Failed to start monitoring in worker {worker.pid}: {e}")
+        else:
+            server.log.info(f"ℹ️ Worker {worker.pid}: Monitoring handled by worker 1")
+
+
+def when_ready(server):
+    """Called just after the server is started."""
+    server.log.info("🚀 Gunicorn server is ready to handle requests")
+    
+    if os.environ.get('MONITOR_CONTINUOUS', '').lower() in ('true', 'yes', '1'):
+        server.log.info("🔄 Monitoring service will start in worker process")
+    else:
+        server.log.info("ℹ️ Monitoring service disabled (MONITOR_CONTINUOUS not set)")
