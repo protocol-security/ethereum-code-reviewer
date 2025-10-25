@@ -849,6 +849,17 @@ def run_commit_monitor_callback(reviewer: SecurityReview, monitored_repo: Monito
         print(f"  Telegram channel: {monitored_repo.telegram_channel_id}")
         print(f"  Also notify default channel: {monitored_repo.notify_default_channel}")
     
+    # Import database manager if available
+    database_available = False
+    db_manager = None
+    if os.environ.get('DATABASE_URL'):
+        try:
+            from .database import get_database_manager
+            db_manager = get_database_manager()
+            database_available = True
+        except Exception as e:
+            print(f"  ⚠️ Database not available: {e}")
+    
     for commit_info in commits:
         print(f"\nAnalyzing commit {commit_info.sha[:7]} on branch {commit_info.branch}")
         print(f"  Author: {commit_info.author}")
@@ -857,6 +868,46 @@ def run_commit_monitor_callback(reviewer: SecurityReview, monitored_repo: Monito
         try:
             # Analyze the commit
             analysis, cost_info = reviewer.analyze_commit(monitored_repo.full_name, commit_info.sha, commit_info.branch)
+            
+            # Generate HTML content for the finding (same format as manual scans)
+            html_content = f"""<h1>Security Review for {monitored_repo.full_name}</h1>
+<p><strong>Commit:</strong> <a href="{commit_info.url}">{commit_info.sha[:7]}</a></p>
+<p><strong>Author:</strong> {commit_info.author}</p>
+<p><strong>Date:</strong> {commit_info.date}</p>
+<p><strong>Branch:</strong> {commit_info.branch}</p>
+<p><strong>Message:</strong> {commit_info.message}</p>
+<h2>Analysis Results</h2>
+<p><strong>Confidence Score:</strong> {analysis['confidence_score']}%</p>
+<p><strong>Has Vulnerabilities:</strong> {'Yes' if analysis['has_vulnerabilities'] else 'No'}</p>
+<h3>Summary</h3>
+<p>{analysis['summary']}</p>
+"""
+            
+            if analysis.get('findings'):
+                html_content += "<h3>Detailed Findings</h3>"
+                for finding in analysis['findings']:
+                    html_content += f"""
+<h4>{finding['severity']} Severity Issue</h4>
+<ul>
+<li><strong>Description:</strong> {finding['description']}</li>
+<li><strong>Recommendation:</strong> {finding['recommendation']}</li>
+<li><strong>Confidence:</strong> {finding['confidence']}%</li>
+</ul>
+"""
+            
+            # Store in database if available (regardless of vulnerability status)
+            if database_available and db_manager:
+                try:
+                    finding_uuid = db_manager.store_finding(
+                        html_content=html_content,
+                        repo_name=monitored_repo.full_name,
+                        commit_info=commit_info,
+                        analysis=analysis,
+                        metadata={'cost_info': str(cost_info) if cost_info else None, 'source': 'continuous_monitoring'}
+                    )
+                    print(f"  💾 Stored finding {finding_uuid} in database")
+                except Exception as db_error:
+                    print(f"  ⚠️ Failed to store finding in database: {db_error}")
             
             if analysis['has_vulnerabilities']:
                 print(f"  ⚠️ Security issues detected (confidence: {analysis['confidence_score']}%)")
@@ -885,7 +936,7 @@ def run_commit_monitor_callback(reviewer: SecurityReview, monitored_repo: Monito
                 else:
                     # Create a GitHub issue
                     reviewer.create_commit_issue(monitored_repo.full_name, commit_info, analysis, cost_info)
-                    print(f"   Created security issue for commit {commit_info.sha[:7]}")
+                    print(f"  📝 Created security issue for commit {commit_info.sha[:7]}")
             else:
                 print(f"  ✅ No security issues detected")
                 
