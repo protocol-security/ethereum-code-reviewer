@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+
+{% block title %}{{ repository.name }} - Ethereum Triager{% endblock %}
+
+{% block extra_head %}
+<style>
+    .repo-header-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        margin-bottom: 2rem;
+    }
+    
+    .repo-header-content {
+        padding: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    
+    .repo-icon-large {
+        width: 80px;
+        height: 80px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.5rem;
+    }
+    
+    .repo-header-info h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+    }
+    
+    .repo-header-url {
+        color: #718096;
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .repo-header-url a {
+        color: #667eea;
+        text-decoration: none;
+    }
+    
+    .repo-header-url a:hover {
+        text-decoration: underline;
+    }
+    
+    .branch-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .branch-tag {
+        padding: 0.25rem 0.75rem;
+        background: #e2e8f0;
+        color: #4a5568;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .commits-section {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    
+    .section-header {
+        background: #f7fafc;
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .section-header h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #2d3748;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .commits-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .commits-table thead {
+        background: #f7fafc;
+    }
+    
+    .commits-table th {
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: #4a5568;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .commits-table td {
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .commits-table tr:hover {
+        background: #f7fafc;
+    }
+    
+    .commit-sha {
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 0.875rem;
+        color: #4a5568;
+        font-weight: 600;
+    }
+    
+    .commit-sha a {
+        color: #667eea;
+        text-decoration: none;
+    }
+    
+    .commit-sha a:hover {
+        text-decoration: underline;
+    }
+    
+    .commit-message {
+        color: #2d3748;
+        font-size: 0.875rem;
+        max-width: 400px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .commit-author {
+        color: #718096;
+        font-size: 0.875rem;
+    }
+    
+    .commit-date {
+        color: #718096;
+        font-size: 0.875rem;
+    }
+    
+    .scan-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .scan-status.scanned {
+        background: #c6f6d5;
+        color: #2f855a;
+    }
+    
+    .scan-status.vulnerable {
+        background: #fed7d7;
+        color: #c53030;
+    }
+    
+    .scan-status.not-scanned {
+        background: #e2e8f0;
+        color: #718096;
+    }
+    
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .btn-sm {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+    }
+    
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #5a67d8;
+    }
+    
+    .btn-secondary {
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+    
+    .btn-secondary:hover {
+        background: #cbd5e0;
+    }
+    
+    .btn-danger {
+        background: #fc8181;
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        background: #f56565;
+    }
+    
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .empty-state {
+        padding: 3rem 2rem;
+        text-align: center;
+        color: #718096;
+    }
+    
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+    
+    .scan-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 0.6s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 1.5rem;
+        border-top: 1px solid #e2e8f0;
+    }
+    
+    .pagination-btn {
+        padding: 0.5rem 1rem;
+        border: 1px solid #e2e8f0;
+        background: white;
+        color: #4a5568;
+        border-radius: 6px;
+        cursor: pointer;
+        text-decoration: none;
+        font-size: 0.875rem;
+        transition: all 0.2s;
+    }
+    
+    .pagination-btn:hover:not(:disabled) {
+        background: #f7fafc;
+        border-color: #cbd5e0;
+    }
+    
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .pagination-btn.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('repositories_list') }}" style="display: inline-flex; align-items: center; gap: 0.5rem; color: #667eea; text-decoration: none; margin-bottom: 1.5rem; font-size: 0.875rem; font-weight: 500;">
+    <i class="fas fa-arrow-left"></i> Back to Repositories
+</a>
+
+<div class="repo-header-card">
+    <div class="repo-header-content">
+        <div class="repo-icon-large">
+            <i class="fas fa-code-branch"></i>
+        </div>
+        <div class="repo-header-info">
+            <h1>{{ repository.name }}</h1>
+            <div class="repo-header-url">
+                <i class="fas fa-link"></i> <a href="{{ repository.url }}" target="_blank" rel="noopener">{{ repository.url }}</a>
+            </div>
+            <div class="branch-tags">
+                {% for branch in repository.branches %}
+                <span class="branch-tag"><i class="fas fa-code-branch"></i> {{ branch }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="commits-section">
+    <div class="section-header">
+        <h2>
+            <i class="fas fa-history"></i>
+            Commits ({{ commits|length }} total, showing last {{ page_size }})
+        </h2>
+    </div>
+    
+    {% if commits %}
+    <table class="commits-table">
+        <thead>
+            <tr>
+                <th>Commit</th>
+                <th>Message</th>
+                <th>Author</th>
+                <th>Date</th>
+                <th>Scan Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for commit in commits %}
+            <tr>
+                <td>
+                    {% if commit.finding_uuid %}
+                    <a href="{{ url_for('triage_finding', finding_uuid=commit.finding_uuid) }}" class="commit-sha">
+                        {{ commit.sha[:7] }}
+                    </a>
+                    {% else %}
+                    <span class="commit-sha">{{ commit.sha[:7] }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="commit-message" title="{{ commit.message }}">
+                        {{ commit.message }}
+                    </div>
+                </td>
+                <td>
+                    <div class="commit-author">
+                        {{ commit.author }}
+                    </div>
+                </td>
+                <td>
+                    <div class="commit-date">
+                        {{ commit.date }}
+                    </div>
+                </td>
+                <td>
+                    {% if commit.scan_status == 'scanned' and not commit.has_vulnerabilities %}
+                    <span class="scan-status scanned">
+                        <i class="fas fa-check-circle"></i> Scanned - Safe
+                    </span>
+                    {% elif commit.scan_status == 'scanned' and commit.has_vulnerabilities %}
+                    <span class="scan-status vulnerable">
+                        <i class="fas fa-exclamation-triangle"></i> Vulnerable
+                    </span>
+                    {% else %}
+                    <span class="scan-status not-scanned">
+                        <i class="fas fa-question-circle"></i> Not Scanned
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="scan-actions">
+                        {% if commit.scan_status == 'scanned' %}
+                        <button class="btn btn-sm btn-secondary" onclick="rescanCommit('{{ repository.name }}', '{{ commit.sha }}')" id="rescan-btn-{{ commit.sha[:7] }}">
+                            <i class="fas fa-redo"></i> Rescan
+                        </button>
+                        {% if commit.finding_uuid %}
+                        <a href="{{ url_for('triage_finding', finding_uuid=commit.finding_uuid) }}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                        {% endif %}
+                        {% else %}
+                        <button class="btn btn-sm btn-primary" onclick="scanCommit('{{ repository.name }}', '{{ commit.sha }}')" id="scan-btn-{{ commit.sha[:7] }}">
+                            <i class="fas fa-search"></i> Scan
+                        </button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-inbox"></i>
+        <p>No commits found for this repository</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function scanCommit(repoName, commitSha) {
+    const btnId = `scan-btn-${commitSha.substring(0, 7)}`;
+    const btn = document.getElementById(btnId);
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Scanning...';
+    
+    try {
+        const response = await fetch('/api/scan-commit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                repo_name: repoName,
+                commit_sha: commitSha
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Reload the page to show updated status
+            window.location.reload();
+        } else {
+            alert('Scan failed: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-search"></i> Scan';
+        }
+    } catch (error) {
+        console.error('Scan error:', error);
+        alert('Scan failed: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-search"></i> Scan';
+    }
+}
+
+async function rescanCommit(repoName, commitSha) {
+    const btnId = `rescan-btn-${commitSha.substring(0, 7)}`;
+    const btn = document.getElementById(btnId);
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Rescanning...';
+    
+    try {
+        const response = await fetch('/api/scan-commit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                repo_name: repoName,
+                commit_sha: commitSha,
+                rescan: true
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Reload the page to show updated status
+            window.location.reload();
+        } else {
+            alert('Rescan failed: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+        }
+    } catch (error) {
+        console.error('Rescan error:', error);
+        alert('Rescan failed: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+    }
+}
+</script>
+{% endblock %}

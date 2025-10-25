@@ -178,36 +178,13 @@ class SecurityFinderApp:
         
         @self.app.route('/')
         def index():
-            """Main page - shows login if not authenticated, findings list if authenticated."""
+            """Main page - shows login if not authenticated, dashboard if authenticated."""
             if not self.is_authenticated():
                 return render_template('login.html', 
                                      google_client_id=self.google_client_id)
             
-            # User is authenticated, show findings list
-            # Get pagination parameters
-            page = request.args.get('page', 1, type=int)
-            per_page = request.args.get('per_page', 10, type=int)
-            
-            # Get filter parameters
-            vulnerability_filter = request.args.get('vulnerability_filter', 'vulnerable')
-            repository_filter = request.args.get('repository_filter', '')
-            status_filter = request.args.get('status_filter', 'unassigned')
-            classification_filter = request.args.get('classification_filter', '')
-            user_filter = request.args.get('user_filter', '')
-            
-            # Validate per_page values
-            if per_page not in [10, 25, 50, 75, 100]:
-                per_page = 10
-            
-            return self.show_findings_list(
-                page=page, 
-                per_page=per_page,
-                vulnerability_filter=vulnerability_filter,
-                repository_filter=repository_filter,
-                status_filter=status_filter,
-                classification_filter=classification_filter,
-                user_filter=user_filter
-            )
+            # User is authenticated, show dashboard
+            return self.show_dashboard()
         
         @self.app.route('/login')
         def login():
@@ -329,9 +306,9 @@ class SecurityFinderApp:
                 session.pop('user', None)
             return redirect(url_for('index'))
         
-        @self.app.route('/findings')
-        def findings():
-            """Show findings list (authenticated users only)."""
+        @self.app.route('/alerts')
+        def alerts():
+            """Show alerts/findings list (authenticated users only)."""
             if not self.is_authenticated():
                 return redirect(url_for('login'))
             
@@ -344,6 +321,7 @@ class SecurityFinderApp:
             repository_filter = request.args.get('repository_filter', '')
             status_filter = request.args.get('status_filter', 'unassigned')
             classification_filter = request.args.get('classification_filter', '')
+            user_filter = request.args.get('user_filter', '')
             
             # Validate per_page values
             if per_page not in [10, 25, 50, 75, 100]:
@@ -355,8 +333,51 @@ class SecurityFinderApp:
                 vulnerability_filter=vulnerability_filter,
                 repository_filter=repository_filter,
                 status_filter=status_filter,
-                classification_filter=classification_filter
+                classification_filter=classification_filter,
+                user_filter=user_filter
             )
+        
+        @self.app.route('/repositories')
+        def repositories_list():
+            """Show repositories list (authenticated users only)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            return self.show_repositories_list()
+        
+        @self.app.route('/repository/<path:repo_name>')
+        def repository_detail(repo_name):
+            """Show repository detail with commits (authenticated users only)."""
+            if not self.is_authenticated():
+                return redirect(url_for('login'))
+            
+            return self.show_repository_detail(repo_name)
+        
+        @self.app.route('/api/scan-commit', methods=['POST'])
+        def scan_commit():
+            """Scan or rescan a commit (authenticated users only)."""
+            if not self.is_authenticated():
+                return jsonify({'error': 'Unauthorized'}), 401
+            
+            try:
+                data = request.get_json()
+                repo_name = data.get('repo_name')
+                commit_sha = data.get('commit_sha')
+                rescan = data.get('rescan', False)
+                
+                if not repo_name or not commit_sha:
+                    return jsonify({'error': 'Repository name and commit SHA required'}), 400
+                
+                # TODO: Implement actual scanning logic
+                # For now, return a placeholder response
+                return jsonify({
+                    'success': True,
+                    'message': f'Scan {"queued" if not rescan else "re-queued"} for commit {commit_sha[:7]}'
+                })
+                
+            except Exception as e:
+                logger.error(f"Error scanning commit: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
         
         @self.app.route('/finding/<finding_id>')
         def view_finding(finding_id):
@@ -2556,6 +2577,128 @@ class SecurityFinderApp:
         except Exception as e:
             logger.error(f"Error fetching findings: {e}")
             return []
+    
+    def show_dashboard(self) -> str:
+        """Show the dashboard page."""
+        try:
+            # Get all findings
+            all_findings = self.get_all_findings()
+            
+            # Calculate statistics
+            vulnerable_count = len([f for f in all_findings if f.get('has_vulnerabilities')])
+            safe_count = len([f for f in all_findings if not f.get('has_vulnerabilities')])
+            
+            # Get unique repositories
+            unique_repos = set(f.get('repo_name') for f in all_findings if f.get('repo_name'))
+            repo_count = len(unique_repos)
+            
+            # Get recent findings (last 24 hours)
+            from datetime import timedelta
+            now = datetime.now(timezone.utc)
+            recent_cutoff = now - timedelta(hours=24)
+            
+            recent_24h_count = 0
+            for finding in all_findings:
+                if finding.get('created_at'):
+                    try:
+                        created_at = datetime.fromisoformat(finding['created_at'].replace('Z', '+00:00'))
+                        if created_at > recent_cutoff:
+                            recent_24h_count += 1
+                    except Exception:
+                        pass
+            
+            stats = {
+                'vulnerable': vulnerable_count,
+                'safe': safe_count,
+                'repositories': repo_count,
+                'recent_24h': recent_24h_count
+            }
+            
+            # Get recent findings (last 10)
+            recent_findings = all_findings[:10]
+            
+            return render_template('dashboard.html',
+                                 stats=stats,
+                                 recent_findings=recent_findings,
+                                 user=self.get_current_user())
+            
+        except Exception as e:
+            logger.error(f"Error showing dashboard: {e}")
+            flash('Error loading dashboard', 'error')
+            return redirect(url_for('alerts'))
+    
+    def show_repositories_list(self) -> str:
+        """Show the repositories list page."""
+        try:
+            repositories = self._load_repositories()
+            
+            # Get statistics for each repository
+            all_findings = self.get_all_findings()
+            
+            for repo in repositories:
+                repo_findings = [f for f in all_findings if f.get('repo_name') == repo['name']]
+                repo['commits_count'] = len(repo_findings)
+                repo['vulnerable_count'] = len([f for f in repo_findings if f.get('has_vulnerabilities')])
+            
+            return render_template('repositories_list.html',
+                                 repositories=repositories,
+                                 user=self.get_current_user())
+            
+        except Exception as e:
+            logger.error(f"Error showing repositories list: {e}")
+            flash('Error loading repositories', 'error')
+            return redirect(url_for('index'))
+    
+    def show_repository_detail(self, repo_name: str) -> str:
+        """Show the repository detail page with commits."""
+        try:
+            if not DATABASE_AVAILABLE:
+                flash('Database not available', 'error')
+                return redirect(url_for('repositories_list'))
+            
+            db_manager = get_database_manager()
+            
+            # Get repository info
+            repository = db_manager.get_repository(repo_name)
+            if not repository:
+                flash('Repository not found', 'error')
+                return redirect(url_for('repositories_list'))
+            
+            # Get all findings for this repository
+            all_findings = self.get_all_findings()
+            repo_findings = [f for f in all_findings if f.get('repo_name') == repo_name]
+            
+            # Sort by created_at descending (most recent first)
+            repo_findings.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            
+            # Limit to last 25 commits (or make this configurable)
+            page_size = 25
+            repo_findings = repo_findings[:page_size]
+            
+            # Build commits list with scan status
+            commits = []
+            for finding in repo_findings:
+                commit = {
+                    'sha': finding['commit_sha'],
+                    'message': finding.get('commit_message', 'N/A'),
+                    'author': finding.get('author', 'Unknown'),
+                    'date': finding.get('commit_date', 'N/A')[:10] if finding.get('commit_date') else 'N/A',
+                    'scan_status': 'scanned',
+                    'has_vulnerabilities': finding.get('has_vulnerabilities', False),
+                    'finding_uuid': finding.get('uuid')
+                }
+                commits.append(commit)
+            
+            return render_template('repository_detail.html',
+                                 repository=repository.to_dict(),
+                                 commits=commits,
+                                 page_size=page_size,
+                                 user=self.get_current_user())
+            
+        except Exception as e:
+            logger.error(f"Error showing repository detail for {repo_name}: {e}")
+            flash('Error loading repository details', 'error')
+            return redirect(url_for('repositories_list'))
     
     def run(self, host='0.0.0.0', port=5000, debug=False):
         """Run the Flask application."""

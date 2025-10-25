@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Ethereum Triager{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stat-card-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+    }
+    
+    .stat-icon.vulnerable {
+        background: linear-gradient(135deg, #fc466b 0%, #3f5efb 100%);
+        color: white;
+    }
+    
+    .stat-icon.safe {
+        background: linear-gradient(135deg, #d4fc79 0%, #96e6a1 100%);
+        color: #2d3748;
+    }
+    
+    .stat-icon.repos {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .stat-icon.recent {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+    }
+    
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+        font-size: 0.875rem;
+        color: #718096;
+        font-weight: 500;
+    }
+    
+    .recent-findings {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    
+    .section-header {
+        background: #f7fafc;
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .section-header h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #2d3748;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .view-all-link {
+        color: #667eea;
+        text-decoration: none;
+        font-size: 0.875rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: color 0.2s;
+    }
+    
+    .view-all-link:hover {
+        color: #5a67d8;
+    }
+    
+    .findings-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .findings-table thead {
+        background: #f7fafc;
+    }
+    
+    .findings-table th {
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: #4a5568;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .findings-table td {
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .findings-table tr:hover {
+        background: #f7fafc;
+    }
+    
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .status-badge.vulnerable {
+        background: #fed7d7;
+        color: #c53030;
+    }
+    
+    .status-badge.safe {
+        background: #c6f6d5;
+        color: #2f855a;
+    }
+    
+    .repo-link {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+    
+    .repo-link:hover {
+        color: #5a67d8;
+        text-decoration: underline;
+    }
+    
+    .commit-sha {
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 0.875rem;
+        color: #4a5568;
+    }
+    
+    .empty-state {
+        padding: 3rem 2rem;
+        text-align: center;
+        color: #718096;
+    }
+    
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; color: #2d3748; font-size: 2rem; font-weight: 700;">
+    <i class="fas fa-chart-line"></i> Dashboard
+</h1>
+
+<div class="dashboard-grid">
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon vulnerable">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div>
+                <div class="stat-value">{{ stats.vulnerable }}</div>
+                <div class="stat-label">Vulnerable</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon safe">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">{{ stats.safe }}</div>
+                <div class="stat-label">Safe</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon repos">
+                <i class="fas fa-code-branch"></i>
+            </div>
+            <div>
+                <div class="stat-value">{{ stats.repositories }}</div>
+                <div class="stat-label">Repositories</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon recent">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div>
+                <div class="stat-value">{{ stats.recent_24h }}</div>
+                <div class="stat-label">Last 24 Hours</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="recent-findings">
+    <div class="section-header">
+        <h2>
+            <i class="fas fa-history"></i>
+            Recent Findings
+        </h2>
+        <a href="{{ url_for('alerts') }}" class="view-all-link">
+            View All <i class="fas fa-arrow-right"></i>
+        </a>
+    </div>
+    
+    {% if recent_findings %}
+    <table class="findings-table">
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Repository</th>
+                <th>Commit</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for finding in recent_findings %}
+            <tr>
+                <td>
+                    <span class="status-badge {{ 'vulnerable' if finding.has_vulnerabilities else 'safe' }}">
+                        <i class="fas fa-{{ 'exclamation-triangle' if finding.has_vulnerabilities else 'check-circle' }}"></i>
+                        {{ 'Vulnerable' if finding.has_vulnerabilities else 'Safe' }}
+                    </span>
+                </td>
+                <td>
+                    <a href="{{ url_for('repository_detail', repo_name=finding.repo_name) }}" class="repo-link">
+                        {{ finding.repo_name }}
+                    </a>
+                </td>
+                <td>
+                    <a href="{{ url_for('triage_finding', finding_uuid=finding.uuid) }}" class="repo-link">
+                        <span class="commit-sha">{{ finding.commit_sha[:7] }}</span>
+                    </a>
+                </td>
+                <td>
+                    <span style="color: #718096; font-size: 0.875rem;">
+                        {{ finding.created_at[:10] if finding.created_at else 'N/A' }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-inbox"></i>
+        <p>No findings yet</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
