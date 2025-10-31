@@ -172,16 +172,21 @@ def repository_detail(repo_name):
                         github_prs = pr_response.json()
                         
                         # Get all findings for this repository to match with PRs
-                        auth_service = get_auth_service()
-                        user_email = auth_service.get_current_user()['email']
-                        all_findings = FindingsService.get_all_findings(user_email=user_email)
-                        
-                        # Create a mapping of PR numbers to findings
-                        pr_findings = {}
-                        for f in all_findings:
-                            if f.get('repo_name') == repo_name and f.get('metadata', {}).get('pr_number'):
-                                pr_num = f['metadata']['pr_number']
-                                pr_findings[pr_num] = f
+                        # Query database directly for PR findings
+                        from ...database import SecurityFinding
+                        session = db_manager.get_session()
+                        try:
+                            pr_finding_records = session.query(SecurityFinding).filter(
+                                SecurityFinding.repo_name == repo_name,
+                                SecurityFinding.pr_number.isnot(None)
+                            ).all()
+                            
+                            # Create a mapping of PR numbers to findings
+                            pr_findings = {}
+                            for finding in pr_finding_records:
+                                pr_findings[finding.pr_number] = finding.to_dict()
+                        finally:
+                            session.close()
                         
                         # Build PRs list with review status
                         for gh_pr in github_prs:
