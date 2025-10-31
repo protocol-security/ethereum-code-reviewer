@@ -357,6 +357,11 @@ class SecurityFinding(Base):
     commit_date = Column(DateTime(timezone=True))
     commit_message = Column(Text)
     
+    # PR information (optional - only set if this is a PR scan)
+    pr_number = Column(Integer)  # PR number if this is a PR scan
+    pr_title = Column(Text)  # PR title
+    pr_state = Column(String(20))  # open, closed, merged
+    
     # Analysis results  
     html_content = Column(Text, nullable=False)
     has_vulnerabilities = Column(Boolean, nullable=False, default=False)
@@ -2559,6 +2564,34 @@ def migrate_database_schema(db_manager: DatabaseManager):
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'security_findings' AND column_name = 'last_updated') THEN
                 ALTER TABLE security_findings ADD COLUMN last_updated TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW();
+            END IF;
+        END$$;
+        """,
+        
+        # Add PR columns
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'security_findings' AND column_name = 'pr_number') THEN
+                ALTER TABLE security_findings ADD COLUMN pr_number INTEGER;
+            END IF;
+        END$$;
+        """,
+        
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'security_findings' AND column_name = 'pr_title') THEN
+                ALTER TABLE security_findings ADD COLUMN pr_title TEXT;
+            END IF;
+        END$$;
+        """,
+        
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'security_findings' AND column_name = 'pr_state') THEN
+                ALTER TABLE security_findings ADD COLUMN pr_state VARCHAR(20);
             END IF;
         END$$;
         """,

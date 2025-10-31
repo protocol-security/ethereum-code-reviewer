@@ -59,7 +59,7 @@ def repositories_list():
 @repositories_bp.route('/repository/<path:repo_name>')
 @login_required
 def repository_detail(repo_name):
-    """Show repository detail with commits (authenticated users only)."""
+    """Show repository detail with commits and PRs (authenticated users only)."""
     try:
         if not DATABASE_AVAILABLE:
             flash('Database not available', 'error')
@@ -73,9 +73,10 @@ def repository_detail(repo_name):
             flash('Repository not found', 'error')
             return redirect(url_for('repositories_bp.repositories_list'))
         
-        # Fetch last 25 commits from GitHub API
+        # Fetch last 25 commits and PRs from GitHub API
         page_size = 25
         commits = []
+        pull_requests = []
         
         try:
             import os
@@ -155,13 +156,86 @@ def repository_detail(repo_name):
                     else:
                         logger.error(f"GitHub API error: {response.status_code} - {response.text}")
                         flash(f'Failed to fetch commits from GitHub: {response.status_code}', 'error')
+                    
+                    # Fetch pull requests from GitHub API
+                    pr_url = f'https://api.github.com/repos/{owner}/{repo}/pulls'
+                    pr_params = {
+                        'state': 'all',  # Get open, closed, and merged PRs
+                        'sort': 'updated',
+                        'direction': 'desc',
+                        'per_page': page_size
+                    }
+                    
+                    pr_response = requests.get(pr_url, headers=headers, params=pr_params, timeout=10)
+                    
+                    if pr_response.status_code == 200:
+                        github_prs = pr_response.json()
+                        
+                        # Get all findings for this repository to match with PRs
+                        auth_service = get_auth_service()
+                        user_email = auth_service.get_current_user()['email']
+                        all_findings = FindingsService.get_all_findings(user_email=user_email)
+                        
+                        # Create a mapping of PR numbers to findings
+                        pr_findings = {}
+                        for f in all_findings:
+                            if f.get('repo_name') == repo_name and f.get('metadata', {}).get('pr_number'):
+                                pr_num = f['metadata']['pr_number']
+                                pr_findings[pr_num] = f
+                        
+                        # Build PRs list with review status
+                        for gh_pr in github_prs:
+                            pr_number = gh_pr['number']
+                            pr_head = gh_pr.get('head', {})
+                            pr_user = gh_pr.get('user', {})
+                            
+                            # Check if this PR has been reviewed
+                            finding = pr_findings.get(pr_number)
+                            
+                            if finding:
+                                # PR has been reviewed
+                                pr = {
+                                    'number': pr_number,
+                                    'title': gh_pr.get('title', 'N/A'),
+                                    'state': gh_pr.get('state', 'unknown'),
+                                    'merged': gh_pr.get('merged', False),
+                                    'author': pr_user.get('login', 'Unknown'),
+                                    'head_sha': pr_head.get('sha', 'N/A'),
+                                    'created_at': gh_pr.get('created_at', 'N/A')[:10] if gh_pr.get('created_at') else 'N/A',
+                                    'updated_at': gh_pr.get('updated_at', 'N/A')[:10] if gh_pr.get('updated_at') else 'N/A',
+                                    'url': gh_pr.get('html_url', ''),
+                                    'scan_status': 'scanned',
+                                    'has_vulnerabilities': finding.get('has_vulnerabilities', False),
+                                    'finding_uuid': finding.get('uuid')
+                                }
+                            else:
+                                # PR has not been reviewed yet
+                                pr = {
+                                    'number': pr_number,
+                                    'title': gh_pr.get('title', 'N/A'),
+                                    'state': gh_pr.get('state', 'unknown'),
+                                    'merged': gh_pr.get('merged', False),
+                                    'author': pr_user.get('login', 'Unknown'),
+                                    'head_sha': pr_head.get('sha', 'N/A'),
+                                    'created_at': gh_pr.get('created_at', 'N/A')[:10] if gh_pr.get('created_at') else 'N/A',
+                                    'updated_at': gh_pr.get('updated_at', 'N/A')[:10] if gh_pr.get('updated_at') else 'N/A',
+                                    'url': gh_pr.get('html_url', ''),
+                                    'scan_status': 'not-scanned',
+                                    'has_vulnerabilities': False,
+                                    'finding_uuid': None
+                                }
+                            
+                            pull_requests.append(pr)
+                    else:
+                        logger.error(f"GitHub API error for PRs: {pr_response.status_code} - {pr_response.text}")
+                        flash(f'Failed to fetch PRs from GitHub: {pr_response.status_code}', 'warning')
                 else:
                     logger.error(f"Invalid repository name format: {repo_name}")
                     flash('Invalid repository name format', 'error')
                     
         except Exception as github_error:
-            logger.error(f"Error fetching commits from GitHub: {github_error}")
-            flash('Error fetching commits from GitHub', 'error')
+            logger.error(f"Error fetching data from GitHub: {github_error}")
+            flash('Error fetching data from GitHub', 'error')
         
         # If GitHub fetch failed, fall back to database findings
         if not commits:
@@ -192,6 +266,7 @@ def repository_detail(repo_name):
         return render_template('repository_detail.html',
                              repository=repository.to_dict(),
                              commits=commits,
+                             pull_requests=pull_requests,
                              page_size=page_size,
                              user=auth_service.get_current_user())
         

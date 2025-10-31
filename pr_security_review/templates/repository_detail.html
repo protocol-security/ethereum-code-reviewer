@@ -334,6 +334,99 @@
     .btn-admin.btn-knowledge:hover {
         background: #38a169;
     }
+    
+    /* Tab Navigation Styles */
+    .tabs-nav {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 2rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .tab-btn {
+        padding: 1rem 1.5rem;
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #718096;
+        font-size: 0.9375rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .tab-btn:hover {
+        color: #667eea;
+        background: #f7fafc;
+    }
+    
+    .tab-btn.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+    }
+    
+    .tab-content {
+        display: none;
+    }
+    
+    .tab-content.active {
+        display: block;
+    }
+    
+    /* PR-specific styles */
+    .pr-number {
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 0.875rem;
+        color: #4a5568;
+        font-weight: 600;
+    }
+    
+    .pr-number a {
+        color: #667eea;
+        text-decoration: none;
+    }
+    
+    .pr-number a:hover {
+        text-decoration: underline;
+    }
+    
+    .pr-title {
+        color: #2d3748;
+        font-size: 0.875rem;
+        max-width: 400px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .pr-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .pr-state.open {
+        background: #c6f6d5;
+        color: #2f855a;
+    }
+    
+    .pr-state.closed {
+        background: #fed7d7;
+        color: #c53030;
+    }
+    
+    .pr-state.merged {
+        background: #d6bcfa;
+        color: #6b46c1;
+    }
 </style>
 {% endblock %}
 
@@ -369,11 +462,22 @@
     </div>
 </div>
 
-<div class="commits-section">
+<!-- Tab Navigation -->
+<div class="tabs-nav">
+    <button class="tab-btn active" onclick="switchTab('commits')">
+        <i class="fas fa-code-branch"></i> Commits
+    </button>
+    <button class="tab-btn" onclick="switchTab('prs')">
+        <i class="fas fa-code-pull-request"></i> Pull Requests
+    </button>
+</div>
+
+<!-- Commits Section -->
+<div class="tab-content commits-section" id="commits-tab">
     <div class="section-header">
         <h2>
             <i class="fas fa-history"></i>
-            Showing last {{ page_size }}) commits for {{ repository.name }}
+            Showing last {{ page_size }} commits for {{ repository.name }}
         </h2>
     </div>
     
@@ -460,10 +564,140 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Pull Requests Section -->
+<div class="tab-content commits-section" id="prs-tab">
+    <div class="section-header">
+        <h2>
+            <i class="fas fa-code-pull-request"></i>
+            Showing last {{ page_size }} pull requests for {{ repository.name }}
+        </h2>
+    </div>
+    
+    {% if pull_requests %}
+    <table class="commits-table">
+        <thead>
+            <tr>
+                <th>PR #</th>
+                <th>Title</th>
+                <th>State</th>
+                <th>Author</th>
+                <th>Updated</th>
+                <th>Scan Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pr in pull_requests %}
+            <tr>
+                <td>
+                    <span class="pr-number">
+                        <a href="{{ pr.url }}" target="_blank" rel="noopener">#{{ pr.number }}</a>
+                    </span>
+                </td>
+                <td>
+                    <div class="pr-title" title="{{ pr.title }}">
+                        {{ pr.title }}
+                    </div>
+                </td>
+                <td>
+                    {% if pr.merged %}
+                    <span class="pr-state merged">
+                        <i class="fas fa-code-branch"></i> Merged
+                    </span>
+                    {% elif pr.state == 'open' %}
+                    <span class="pr-state open">
+                        <i class="fas fa-circle-dot"></i> Open
+                    </span>
+                    {% else %}
+                    <span class="pr-state closed">
+                        <i class="fas fa-circle"></i> Closed
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="commit-author">
+                        {{ pr.author }}
+                    </div>
+                </td>
+                <td>
+                    <div class="commit-date">
+                        {{ pr.updated_at }}
+                    </div>
+                </td>
+                <td>
+                    {% if pr.scan_status == 'scanned' and not pr.has_vulnerabilities %}
+                    <span class="scan-status scanned">
+                        <i class="fas fa-check-circle"></i> Scanned - Safe
+                    </span>
+                    {% elif pr.scan_status == 'scanned' and pr.has_vulnerabilities %}
+                    <span class="scan-status vulnerable">
+                        <i class="fas fa-exclamation-triangle"></i> Vulnerable
+                    </span>
+                    {% else %}
+                    <span class="scan-status not-scanned">
+                        <i class="fas fa-question-circle"></i> Not Scanned
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="scan-actions">
+                        {% if pr.scan_status == 'scanned' %}
+                        <button class="btn btn-sm btn-secondary" onclick="rescanPR('{{ repository.name }}', {{ pr.number }})" id="rescan-pr-btn-{{ pr.number }}">
+                            <i class="fas fa-redo"></i> Rescan
+                        </button>
+                        {% if pr.finding_uuid %}
+                        <a href="{{ url_for('findings_bp.triage_finding', finding_uuid=pr.finding_uuid) }}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                        {% endif %}
+                        {% else %}
+                        <button class="btn btn-sm btn-primary" onclick="scanPR('{{ repository.name }}', {{ pr.number }})" id="scan-pr-btn-{{ pr.number }}">
+                            <i class="fas fa-search"></i> Scan
+                        </button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-inbox"></i>
+        <p>No pull requests found for this repository</p>
+    </div>
+    {% endif %}
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
+// Tab switching functionality
+function switchTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Remove active class from all buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected tab
+    document.getElementById(tabName + '-tab').classList.add('active');
+    
+    // Add active class to clicked button
+    event.target.classList.add('active');
+}
+
+// Initialize: Show commits tab by default
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('commits-tab').classList.add('active');
+});
+
+// Commit scanning functions
 async function scanCommit(repoName, commitSha) {
     const btnId = `scan-btn-${commitSha.substring(0, 7)}`;
     const btn = document.getElementById(btnId);
@@ -530,6 +764,84 @@ async function rescanCommit(repoName, commitSha) {
             window.location.reload();
         } else {
             alert('Rescan failed: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+        }
+    } catch (error) {
+        console.error('Rescan error:', error);
+        alert('Rescan failed: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+    }
+}
+
+// PR scanning functions
+async function scanPR(repoName, prNumber) {
+    const btnId = `scan-pr-btn-${prNumber}`;
+    const btn = document.getElementById(btnId);
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Scanning...';
+    
+    try {
+        const response = await fetch('/api/scan-pr', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                repo_name: repoName,
+                pr_number: prNumber
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Reload the page to show updated status
+            window.location.reload();
+        } else {
+            alert('Scan failed: ' + (data.error || data.message || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-search"></i> Scan';
+        }
+    } catch (error) {
+        console.error('Scan error:', error);
+        alert('Scan failed: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-search"></i> Scan';
+    }
+}
+
+async function rescanPR(repoName, prNumber) {
+    const btnId = `rescan-pr-btn-${prNumber}`;
+    const btn = document.getElementById(btnId);
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Rescanning...';
+    
+    try {
+        const response = await fetch('/api/scan-pr', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                repo_name: repoName,
+                pr_number: prNumber,
+                rescan: true
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Reload the page to show updated status
+            window.location.reload();
+        } else {
+            alert('Rescan failed: ' + (data.error || data.message || 'Unknown error'));
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
         }

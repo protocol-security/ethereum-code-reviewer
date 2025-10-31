@@ -424,3 +424,199 @@ def scan_commit():
     except Exception as e:
         logger.error(f"Error scanning commit: {e}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
+
+
+@api_bp.route('/scan-pr', methods=['POST'])
+@login_required
+def scan_pr():
+    """Scan or rescan a pull request (authenticated users only)."""
+    import os
+    import threading
+    from github import Github, Auth
+    
+    try:
+        data = request.get_json()
+        repo_name = data.get('repo_name')
+        pr_number = data.get('pr_number')
+        rescan = data.get('rescan', False)
+        
+        if not repo_name or not pr_number:
+            return jsonify({'error': 'Repository name and PR number required'}), 400
+        
+        # Check if PR already has findings
+        if DATABASE_AVAILABLE:
+            db_manager = get_database_manager()
+            session = db_manager.get_session()
+            try:
+                from ...database import SecurityFinding
+                existing_findings = session.query(SecurityFinding).filter(
+                    SecurityFinding.repo_name == repo_name,
+                    SecurityFinding.pr_number == pr_number
+                ).all()
+                
+                if existing_findings and not rescan:
+                    # Findings exist and this is not a rescan - prevent duplicate
+                    session.close()
+                    return jsonify({
+                        'success': False,
+                        'message': f'PR #{pr_number} has already been scanned. Use rescan if you want to analyze it again.',
+                        'finding_uuid': str(existing_findings[0].uuid)
+                    }), 400
+                elif existing_findings and rescan:
+                    # This is a rescan - delete all existing findings for this PR first
+                    for finding in existing_findings:
+                        session.delete(finding)
+                    session.commit()
+                    logger.info(f"Deleted {len(existing_findings)} existing finding(s) for {repo_name}:PR#{pr_number} before rescan")
+            finally:
+                session.close()
+        
+        # Run the scan in a background thread to avoid blocking the request
+        def run_scan():
+            try:
+                # Import SecurityReview class
+                from ...__main__ import SecurityReview, CommitInfo
+                from ...config_loader import agent_config
+                
+                # Load repository-specific agent configuration if available
+                try:
+                    if agent_config.load_for_repository(repo_name):
+                        logger.info(f"Loaded repository-specific agent configuration for {repo_name}")
+                    else:
+                        logger.info(f"Using main agent configuration for {repo_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to load repository-specific agent, using main agent: {e}")
+                
+                # Get GitHub token
+                github_token = os.getenv('GITHUB_TOKEN')
+                if not github_token:
+                    logger.error("GITHUB_TOKEN not configured")
+                    return
+                
+                # Initialize SecurityReview with configuration from environment
+                provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
+                provider_kwargs = {}
+                
+                # Get docs directory if configured
+                docs_dir = os.environ.get('DOCS_DIR')
+                voyage_key = os.environ.get('VOYAGE_API_KEY')
+                voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-large')
+                
+                logger.info(f"Starting scan for {repo_name}:PR#{pr_number}")
+                
+                # Initialize reviewer
+                reviewer = SecurityReview(
+                    provider_name,
+                    provider_kwargs,
+                    docs_dir=docs_dir,
+                    voyage_key=voyage_key,
+                    voyage_model=voyage_model
+                )
+                
+                # Get PR information from GitHub
+                github = Github(auth=Auth.Token(github_token))
+                repo = github.get_repo(repo_name)
+                pr = repo.get_pull(int(pr_number))
+                
+                # Get the head commit SHA for the PR
+                head_sha = pr.head.sha
+                
+                # Analyze the PR's head commit
+                analysis, cost_info = reviewer.analyze_commit(repo_name, head_sha)
+                
+                logger.info(f"Analysis complete for {repo_name}:PR#{pr_number} - Vulnerabilities: {analysis.get('has_vulnerabilities', False)}")
+                
+                # Store the finding in database
+                if DATABASE_AVAILABLE:
+                    # Create CommitInfo object
+                    commit_info = CommitInfo(
+                        sha=head_sha,
+                        url=pr.html_url,
+                        message=pr.title,
+                        author=pr.user.login if pr.user else 'Unknown',
+                        date=pr.created_at,
+                        branch=pr.head.ref
+                    )
+                    
+                    # Generate HTML content for the finding
+                    pr_state = 'merged' if pr.merged else pr.state
+                    html_content = f"""<h1>Security Review for {repo_name}</h1>
+<h2>Pull Request #{pr_number}: {pr.title}</h2>
+<p><strong>PR URL:</strong> <a href="{pr.html_url}">{pr.html_url}</a></p>
+<p><strong>State:</strong> {pr_state}</p>
+<p><strong>Author:</strong> {pr.user.login if pr.user else 'Unknown'}</p>
+<p><strong>Created:</strong> {pr.created_at}</p>
+<p><strong>Updated:</strong> {pr.updated_at}</p>
+<p><strong>Head SHA:</strong> <a href="{commit_info.url}">{head_sha[:7]}</a></p>
+<h2>Analysis Results</h2>
+<p><strong>Confidence Score:</strong> {analysis['confidence_score']}%</p>
+<p><strong>Has Vulnerabilities:</strong> {'Yes' if analysis['has_vulnerabilities'] else 'No'}</p>
+<h3>Summary</h3>
+<p>{analysis['summary']}</p>
+"""
+                    
+                    if analysis.get('findings'):
+                        html_content += "<h3>Detailed Findings</h3>"
+                        for finding in analysis['findings']:
+                            html_content += f"""
+<h4>{finding['severity']} Severity Issue</h4>
+<ul>
+<li><strong>Description:</strong> {finding['description']}</li>
+<li><strong>Recommendation:</strong> {finding['recommendation']}</li>
+<li><strong>Confidence:</strong> {finding['confidence']}%</li>
+</ul>
+"""
+                    
+                    # Store in database with PR metadata
+                    db_manager = get_database_manager()
+                    finding_uuid = db_manager.store_finding(
+                        html_content=html_content,
+                        repo_name=repo_name,
+                        commit_info=commit_info,
+                        analysis=analysis,
+                        metadata={
+                            'cost_info': str(cost_info) if cost_info else None,
+                            'pr_number': pr_number,
+                            'pr_title': pr.title,
+                            'pr_state': pr_state
+                        }
+                    )
+                    
+                    # Update the finding with PR information
+                    session = db_manager.get_session()
+                    try:
+                        from ...database import SecurityFinding
+                        finding_record = session.query(SecurityFinding).filter(
+                            SecurityFinding.uuid == finding_uuid
+                        ).first()
+                        
+                        if finding_record:
+                            finding_record.pr_number = pr_number
+                            finding_record.pr_title = pr.title
+                            finding_record.pr_state = pr_state
+                            session.commit()
+                    finally:
+                        session.close()
+                    
+                    logger.info(f"Stored finding {finding_uuid} for {repo_name}:PR#{pr_number}")
+                else:
+                    logger.warning("Database not available, scan results not stored")
+                    
+            except Exception as e:
+                logger.error(f"Error in background PR scan: {e}", exc_info=True)
+        
+        # Start the scan in background
+        scan_thread = threading.Thread(target=run_scan)
+        scan_thread.daemon = True
+        scan_thread.start()
+        
+        logger.info(f"Scan {'re-' if rescan else ''}queued for {repo_name}:PR#{pr_number}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Scan {"re-queued" if rescan else "queued"} for PR #{pr_number}. This may take a few moments.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error scanning PR: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
