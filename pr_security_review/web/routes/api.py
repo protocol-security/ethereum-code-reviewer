@@ -518,11 +518,14 @@ def scan_pr():
                 repo = github.get_repo(repo_name)
                 pr = repo.get_pull(int(pr_number))
                 
-                # Get the head commit SHA for the PR
-                head_sha = pr.head.sha
+                # Get ALL changes from the PR (not just head commit)
+                changes = reviewer.get_pr_changes(pr)
                 
-                # Analyze the PR's head commit
-                analysis, cost_info = reviewer.analyze_commit(repo_name, head_sha)
+                # Analyze the PR changes
+                analysis, cost_info = reviewer.analyze_security(changes)
+                
+                # Get the head commit SHA for reference
+                head_sha = pr.head.sha
                 
                 logger.info(f"Analysis complete for {repo_name}:PR#{pr_number} - Vulnerabilities: {analysis.get('has_vulnerabilities', False)}")
                 
