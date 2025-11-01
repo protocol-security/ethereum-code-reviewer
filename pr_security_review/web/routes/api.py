@@ -529,6 +529,18 @@ def scan_pr():
                 
                 logger.info(f"Analysis complete for {repo_name}:PR#{pr_number} - Vulnerabilities: {analysis.get('has_vulnerabilities', False)}")
                 
+                # Log detailed findings information
+                if analysis.get('has_vulnerabilities'):
+                    logger.info(f"Found {len(analysis.get('findings', []))} potential vulnerabilities in PR#{pr_number}:")
+                    for i, finding in enumerate(analysis.get('findings', []), 1):
+                        logger.info(f"  Finding {i}:")
+                        logger.info(f"    Severity: {finding.get('severity', 'UNKNOWN')}")
+                        logger.info(f"    Confidence: {finding.get('confidence', 0)}%")
+                        logger.info(f"    Description: {finding.get('description', 'N/A')}")
+                        logger.info(f"    Recommendation: {finding.get('recommendation', 'N/A')}")
+                else:
+                    logger.info(f"No vulnerabilities found in PR#{pr_number} (confidence: {analysis.get('confidence_score', 0)}%)")
+                
                 # Store the finding in database
                 if DATABASE_AVAILABLE:
                     # Create CommitInfo object
