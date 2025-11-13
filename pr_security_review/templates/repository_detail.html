@@ -464,10 +464,10 @@
 
 <!-- Tab Navigation -->
 <div class="tabs-nav">
-    <button class="tab-btn active" onclick="switchTab('commits')">
+    <button class="tab-btn active" onclick="switchTab('commits', event)">
         <i class="fas fa-code-branch"></i> Commits
     </button>
-    <button class="tab-btn" onclick="switchTab('prs')">
+    <button class="tab-btn" onclick="switchTab('prs', event)">
         <i class="fas fa-code-pull-request"></i> Pull Requests
     </button>
 </div>
@@ -477,7 +477,7 @@
     <div class="section-header">
         <h2>
             <i class="fas fa-history"></i>
-            Showing last {{ page_size }} commits for {{ repository.name }}
+            Commits for {{ repository.name }} (Page {{ current_page }})
         </h2>
     </div>
     
@@ -563,6 +563,35 @@
         <p>No commits found for this repository</p>
     </div>
     {% endif %}
+    
+    <!-- Pagination Controls for Commits -->
+    {% if commits %}
+    <div class="pagination">
+        {% if current_page > 1 %}
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1) }}" class="pagination-btn">
+            <i class="fas fa-chevron-left"></i> Previous
+        </a>
+        {% else %}
+        <button class="pagination-btn" disabled>
+            <i class="fas fa-chevron-left"></i> Previous
+        </button>
+        {% endif %}
+        
+        <span style="color: #4a5568; font-size: 0.875rem; padding: 0 1rem;">
+            Page {{ current_page }}
+        </span>
+        
+        {% if commits|length == page_size %}
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1) }}" class="pagination-btn">
+            Next <i class="fas fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <button class="pagination-btn" disabled>
+            Next <i class="fas fa-chevron-right"></i>
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <!-- Pull Requests Section -->
@@ -570,7 +599,7 @@
     <div class="section-header">
         <h2>
             <i class="fas fa-code-pull-request"></i>
-            Showing last {{ page_size }} pull requests for {{ repository.name }}
+            Pull Requests for {{ repository.name }} (Page {{ current_page }})
         </h2>
     </div>
     
@@ -668,13 +697,42 @@
         <p>No pull requests found for this repository</p>
     </div>
     {% endif %}
+    
+    <!-- Pagination Controls for PRs -->
+    {% if pull_requests %}
+    <div class="pagination">
+        {% if current_page > 1 %}
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1) }}" class="pagination-btn">
+            <i class="fas fa-chevron-left"></i> Previous
+        </a>
+        {% else %}
+        <button class="pagination-btn" disabled>
+            <i class="fas fa-chevron-left"></i> Previous
+        </button>
+        {% endif %}
+        
+        <span style="color: #4a5568; font-size: 0.875rem; padding: 0 1rem;">
+            Page {{ current_page }}
+        </span>
+        
+        {% if pull_requests|length == page_size %}
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1) }}" class="pagination-btn">
+            Next <i class="fas fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <button class="pagination-btn" disabled>
+            Next <i class="fas fa-chevron-right"></i>
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
 // Tab switching functionality
-function switchTab(tabName) {
+function switchTab(tabName, evt) {
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
@@ -689,7 +747,7 @@ function switchTab(tabName) {
     document.getElementById(tabName + '-tab').classList.add('active');
     
     // Add active class to clicked button
-    event.target.classList.add('active');
+    evt.target.classList.add('active');
 }
 
 // Initialize: Show commits tab by default

@@ -73,8 +73,14 @@ def repository_detail(repo_name):
             flash('Repository not found', 'error')
             return redirect(url_for('repositories_bp.repositories_list'))
         
-        # Fetch last 25 commits and PRs from GitHub API
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
         page_size = 25
+        
+        # Ensure page is at least 1
+        if page < 1:
+            page = 1
+        
         commits = []
         pull_requests = []
         
@@ -106,7 +112,8 @@ def repository_detail(repo_name):
                     url = f'https://api.github.com/repos/{owner}/{repo}/commits'
                     params = {
                         'sha': branch,
-                        'per_page': page_size
+                        'per_page': page_size,
+                        'page': page
                     }
                     
                     response = requests.get(url, headers=headers, params=params, timeout=10)
@@ -163,7 +170,8 @@ def repository_detail(repo_name):
                         'state': 'all',  # Get open, closed, and merged PRs
                         'sort': 'updated',
                         'direction': 'desc',
-                        'per_page': page_size
+                        'per_page': page_size,
+                        'page': page
                     }
                     
                     pr_response = requests.get(pr_url, headers=headers, params=pr_params, timeout=10)
@@ -273,6 +281,7 @@ def repository_detail(repo_name):
                              commits=commits,
                              pull_requests=pull_requests,
                              page_size=page_size,
+                             current_page=page,
                              user=auth_service.get_current_user())
         
     except Exception as e:
