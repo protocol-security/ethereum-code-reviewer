@@ -486,14 +486,38 @@
                 </button>
             </div>
             <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-                <label for="author-filter" style="color: #4a5568; font-size: 0.875rem; font-weight: 500;">
-                    Filter by Authors:
-                </label>
-                <select id="author-filter" multiple size="1" onchange="updateAuthorFilter()" style="min-width: 200px; padding: 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.875rem; color: #2d3748; background-color: white; cursor: pointer;">
-                    {% for author in unique_authors %}
-                    <option value="{{ author }}" {% if author in author_filters %}selected{% endif %}>{{ author }}</option>
-                    {% endfor %}
-                </select>
+                <div style="position: relative;">
+                    <button id="author-dropdown-btn" onclick="toggleAuthorDropdown()" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; background: white; cursor: pointer; font-size: 0.875rem; color: #2d3748;">
+                        <i class="fas fa-users"></i>
+                        <span>Filter by Authors</span>
+                        <i class="fas fa-chevron-down" style="font-size: 0.75rem;"></i>
+                    </button>
+                    <div id="author-dropdown" style="display: none; position: absolute; top: 100%; left: 0; margin-top: 0.25rem; background: white; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index: 1000; min-width: 300px; max-height: 400px; overflow-y: auto;">
+                        <div style="padding: 0.75rem; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="text" id="author-search" placeholder="Search authors..." onkeyup="filterAuthorList()" style="flex: 1; padding: 0.375rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 0.875rem;">
+                            <button onclick="clearAuthorSearch()" style="padding: 0.375rem 0.5rem; border: none; background: #e2e8f0; border-radius: 4px; cursor: pointer;">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div id="author-list">
+                            {% for author, count in sorted_authors %}
+                            <label class="author-item" data-author-name="{{ author|lower }}" style="display: flex; align-items: center; padding: 0.5rem 0.75rem; cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='white'">
+                                <input type="checkbox" value="{{ author }}" {% if author in author_filters %}checked{% endif %} onchange="updateAuthorSelection()" style="margin-right: 0.5rem; cursor: pointer;">
+                                <span style="flex: 1; font-size: 0.875rem; color: #2d3748;">{{ author }}</span>
+                                <span style="font-size: 0.75rem; color: #718096; background: #e2e8f0; padding: 0.125rem 0.5rem; border-radius: 9999px;">{{ count }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <div style="padding: 0.75rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.5rem;">
+                            <button onclick="applyAuthorFilter()" style="flex: 1; padding: 0.5rem; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.875rem; font-weight: 500;">
+                                Apply
+                            </button>
+                            <button onclick="closeAuthorDropdown()" style="flex: 1; padding: 0.5rem; background: #e2e8f0; color: #4a5568; border: none; border-radius: 4px; cursor: pointer; font-size: 0.875rem; font-weight: 500;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 {% if author_filters %}
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
                     <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
@@ -775,10 +799,23 @@
 
 {% block extra_scripts %}
 <script>
-// Author filter functionality
-function updateAuthorFilter() {
-    const select = document.getElementById('author-filter');
-    const selectedAuthors = Array.from(select.selectedOptions).map(option => option.value);
+// Author dropdown functionality
+function toggleAuthorDropdown() {
+    const dropdown = document.getElementById('author-dropdown');
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+}
+
+function closeAuthorDropdown() {
+    document.getElementById('author-dropdown').style.display = 'none';
+}
+
+function updateAuthorSelection() {
+    // Just update the UI, don't navigate yet
+}
+
+function applyAuthorFilter() {
+    const checkboxes = document.querySelectorAll('#author-list input[type="checkbox"]:checked');
+    const selectedAuthors = Array.from(checkboxes).map(cb => cb.value);
     const currentUrl = new URL(window.location.href);
     
     if (selectedAuthors.length > 0) {
@@ -793,6 +830,36 @@ function updateAuthorFilter() {
     
     window.location.href = currentUrl.toString();
 }
+
+function filterAuthorList() {
+    const searchInput = document.getElementById('author-search');
+    const filter = searchInput.value.toLowerCase();
+    const authorItems = document.querySelectorAll('.author-item');
+    
+    authorItems.forEach(item => {
+        const authorName = item.dataset.authorName;
+        if (authorName.includes(filter)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+function clearAuthorSearch() {
+    document.getElementById('author-search').value = '';
+    filterAuthorList();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('author-dropdown');
+    const button = document.getElementById('author-dropdown-btn');
+    
+    if (dropdown && button && !dropdown.contains(event.target) && !button.contains(event.target)) {
+        dropdown.style.display = 'none';
+    }
+});
 
 // Remove specific author from filter
 function removeAuthor(authorToRemove) {

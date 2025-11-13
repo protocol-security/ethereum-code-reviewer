@@ -356,8 +356,46 @@ def repository_detail(repo_name):
                 }
                 commits.append(commit)
         
-        # Get unique authors from commits for filter dropdown
-        unique_authors = sorted(list(set([c['author'] for c in commits if c.get('author')])))
+        # Get all authors with their commit counts (need to fetch more commits to get accurate counts)
+        author_commit_counts = {}
+        
+        # Fetch additional commits to get accurate author counts (up to 100 commits)
+        try:
+            if github_token and len(parts) >= 2:
+                owner = parts[0]
+                repo = parts[1]
+                branches = repository.branches
+                branch = branches[0] if branches else 'main'
+                
+                headers = {
+                    'Authorization': f'token {github_token}',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+                
+                url = f'https://api.github.com/repos/{owner}/{repo}/commits'
+                params = {
+                    'sha': branch,
+                    'per_page': 100
+                }
+                
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    all_commits = response.json()
+                    for gh_commit in all_commits:
+                        commit_data = gh_commit.get('commit', {})
+                        author_data = commit_data.get('author', {})
+                        author_name = author_data.get('name', 'Unknown')
+                        
+                        if author_name in author_commit_counts:
+                            author_commit_counts[author_name] += 1
+                        else:
+                            author_commit_counts[author_name] = 1
+        except Exception as e:
+            logger.warning(f"Error fetching author commit counts: {e}")
+        
+        # Sort authors by commit count (descending)
+        sorted_authors = sorted(author_commit_counts.items(), key=lambda x: x[1], reverse=True)
         
         return render_template('repository_detail.html',
                              repository=repository.to_dict(),
@@ -367,7 +405,7 @@ def repository_detail(repo_name):
                              current_page=page,
                              author_filters=author_filters,
                              show_all=show_all,
-                             unique_authors=unique_authors,
+                             sorted_authors=sorted_authors,
                              user=auth_service.get_current_user())
         
     except Exception as e:
