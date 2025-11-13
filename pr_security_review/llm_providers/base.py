@@ -68,13 +68,23 @@ class LLMProvider(ABC):
         Returns:
             Dict: Validated and normalized response
         """
+        # Ensure required keys exist
+        if 'has_vulnerabilities' not in response:
+            raise ValueError("Response missing 'has_vulnerabilities' key")
+        if 'findings' not in response:
+            response['findings'] = []
+        if 'summary' not in response:
+            response['summary'] = ""
+        if 'confidence_score' not in response:
+            response['confidence_score'] = 0
+            
         if not response['has_vulnerabilities']:
             response['confidence_score'] = 100
             return response
             
         # If there are findings, overall confidence should match highest finding confidence
         if response['findings']:
-            max_confidence = max(finding['confidence'] for finding in response['findings'])
+            max_confidence = max(finding.get('confidence', 50) for finding in response['findings'])
             response['confidence_score'] = max_confidence
             
         return response

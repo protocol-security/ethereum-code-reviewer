@@ -389,14 +389,36 @@ class ClaudeProvider(LLMProvider):
                     # No vulnerabilities found, no need to verify
                     return initial_result, initial_cost_info
                     
-            except (json.JSONDecodeError, IndexError, ValueError, AttributeError) as e:
-                print(f"Warning: Failed to parse Claude's response as JSON:\n{response.content}")
+            except json.JSONDecodeError as e:
+                print(f"Warning: Failed to parse Claude's response as JSON")
+                print(f"JSON Error: {str(e)}")
+                if response_text and len(response_text) < 1000:
+                    print(f"Response text: {response_text}")
+                return {
+                    "confidence_score": 0,
+                    "has_vulnerabilities": False,
+                    "findings": [],
+                    "summary": "Failed to parse JSON response"
+                }, initial_cost_info
+            except ValueError as e:
+                print(f"Warning: Invalid response structure from Claude")
+                print(f"Validation Error: {str(e)}")
+                if 'cleaned_json' in locals() and len(cleaned_json) < 1000:
+                    print(f"Parsed JSON: {cleaned_json}")
+                return {
+                    "confidence_score": 0,
+                    "has_vulnerabilities": False,
+                    "findings": [],
+                    "summary": f"Invalid response structure: {str(e)}"
+                }, initial_cost_info
+            except (IndexError, AttributeError, KeyError) as e:
+                print(f"Warning: Unexpected error processing Claude's response")
                 print(f"Error: {str(e)}")
                 return {
                     "confidence_score": 0,
                     "has_vulnerabilities": False,
                     "findings": [],
-                    "summary": "Failed to analyze security implications"
+                    "summary": "Failed to process response"
                 }, initial_cost_info
                 
         except Exception as e:
