@@ -41,7 +41,7 @@ Vulnerabilities Detected: Yes
 Summary:
 After verification: 3 confirmed vulnerabilities out of 3 initially found.
 
-Cost Information: $0.108381 (25052 input + 2215 output tokens, claude-sonnet-4-20250514)
+Cost Information: $0.108381 (25052 input + 2215 output tokens, claude-sonnet-4-5-context-1m-2025-08-07)
 
 Detailed Findings:
 
@@ -180,7 +180,7 @@ python -m pr_security_review https://github.com/org/repo/pull/1 \
   --github-token your_github_token \
   --llm-provider anthropic \
   --anthropic-api-key your_anthropic_key \
-  --model claude-sonnet-4-20250514 \  # optional
+  --model claude-sonnet-4-5-context-1m-2025-08-07 \  # optional
   --docs-dir ./docs \   # optional
   --voyage-api-key your_voyage_key        # required if using docs-dir
 ```

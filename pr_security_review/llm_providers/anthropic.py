@@ -19,13 +19,13 @@ class ClaudeProvider(LLMProvider):
         Args:
             api_key: Anthropic API key
             **kwargs: Additional configuration options
-                - model: Claude model to use (default: claude-sonnet-4-20250514)
+                - model: Claude model to use (default: claude-sonnet-4-5-context-1m-2025-08-07)
                 - max_tokens: Maximum tokens for response (default: 4096)
                 - temperature: Sampling temperature (default: 0)
         """
         self.api_key = api_key
         self._client = None
-        self.model = kwargs.get('model', 'claude-sonnet-4-20250514')
+        self.model = kwargs.get('model', 'claude-sonnet-4-5-context-1m-2025-08-07')
         self.max_tokens = kwargs.get('max_tokens', 4096)
         self.temperature = kwargs.get('temperature', 0)
         
@@ -55,8 +55,8 @@ class ClaudeProvider(LLMProvider):
         """
         # Cost per 1M tokens (input, output)
         model_pricing = {
-            'claude-opus-4-20250514': (15.00, 75.00),
-            'claude-sonnet-4-20250514': (3.00, 15.00),
+            'claude-opus-4-5-context-1m-2025-08-07': (15.00, 75.00),
+            'claude-sonnet-4-5-context-1m-2025-08-07': (3.00, 15.00),
             'claude-3-7-sonnet-latest': (3.00, 15.00),
             'claude-3-5-sonnet-20241022': (3.00, 15.00),
             'claude-3-5-sonnet-latest': (3.00, 15.00),
