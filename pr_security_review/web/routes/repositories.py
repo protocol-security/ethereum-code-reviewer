@@ -370,10 +370,12 @@ def repository_detail(repo_name):
             session = db_manager.get_session()
             try:
                 # Query for findings that have batch_size in metadata
-                batch_findings = session.query(SecurityFinding).filter(
-                    SecurityFinding.repo_name == repo_name,
-                    SecurityFinding.extra_metadata['batch_size'].astext.isnot(None)
-                ).order_by(SecurityFinding.created_at.desc()).limit(50).all()
+                # Get all findings for this repo and filter in Python
+                all_findings = session.query(SecurityFinding).filter(
+                    SecurityFinding.repo_name == repo_name
+                ).order_by(SecurityFinding.created_at.desc()).all()
+                
+                batch_findings = [f for f in all_findings if f.extra_metadata and f.extra_metadata.get('batch_size')][:50]
                 
                 for finding in batch_findings:
                     batch_metadata = finding.extra_metadata or {}
