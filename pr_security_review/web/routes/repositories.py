@@ -78,7 +78,14 @@ def repository_detail(repo_name):
         author_filter_param = request.args.get('authors', None, type=str)
         author_filters = author_filter_param.split(',') if author_filter_param else []
         show_all = request.args.get('show_all', 'false').lower() == 'true'
-        page_size = 25
+        per_page = request.args.get('per_page', 25, type=int)
+        
+        # Validate per_page
+        valid_per_page_values = [25, 50, 75, 100]
+        if per_page not in valid_per_page_values and not show_all:
+            per_page = 25
+        
+        page_size = per_page
         
         # Ensure page is at least 1
         if page < 1:
@@ -402,6 +409,7 @@ def repository_detail(repo_name):
                              commits=commits,
                              pull_requests=pull_requests,
                              page_size=page_size,
+                             per_page=per_page,
                              current_page=page,
                              author_filters=author_filters,
                              show_all=show_all,

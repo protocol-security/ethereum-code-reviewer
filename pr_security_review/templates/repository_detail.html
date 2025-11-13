@@ -486,6 +486,15 @@
                 </button>
             </div>
             <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <label for="per-page-select" style="color: #4a5568; font-size: 0.875rem; font-weight: 500;">
+                    Show:
+                </label>
+                <select id="per-page-select" onchange="changePerPage()" style="padding: 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.875rem; color: #2d3748; background-color: white; cursor: pointer;">
+                    <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    <option value="75" {% if per_page == 75 %}selected{% endif %}>75</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                </select>
                 <div style="position: relative;">
                     <button id="author-dropdown-btn" onclick="toggleAuthorDropdown()" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; background: white; cursor: pointer; font-size: 0.875rem; color: #2d3748;">
                         <i class="fas fa-users"></i>
@@ -636,7 +645,7 @@
     {% if commits and not show_all %}
     <div class="pagination">
         {% if current_page > 1 %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, authors=author_filters|join(',')) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, authors=author_filters|join(','), per_page=per_page) }}" class="pagination-btn">
             <i class="fas fa-chevron-left"></i> Previous
         </a>
         {% else %}
@@ -650,7 +659,7 @@
         </span>
         
         {% if commits|length == page_size %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1, authors=author_filters|join(',')) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1, authors=author_filters|join(','), per_page=per_page) }}" class="pagination-btn">
             Next <i class="fas fa-chevron-right"></i>
         </a>
         {% else %}
@@ -770,7 +779,7 @@
     {% if pull_requests %}
     <div class="pagination">
         {% if current_page > 1 %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, per_page=per_page) }}" class="pagination-btn">
             <i class="fas fa-chevron-left"></i> Previous
         </a>
         {% else %}
@@ -784,7 +793,7 @@
         </span>
         
         {% if pull_requests|length == page_size %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1, per_page=per_page) }}" class="pagination-btn">
             Next <i class="fas fa-chevron-right"></i>
         </a>
         {% else %}
@@ -811,6 +820,18 @@ function closeAuthorDropdown() {
 
 function updateAuthorSelection() {
     // Just update the UI, don't navigate yet
+}
+
+function changePerPage() {
+    const select = document.getElementById('per-page-select');
+    const perPage = select.value;
+    const currentUrl = new URL(window.location.href);
+    
+    currentUrl.searchParams.set('per_page', perPage);
+    // Reset to page 1 when changing per_page
+    currentUrl.searchParams.delete('page');
+    
+    window.location.href = currentUrl.toString();
 }
 
 function applyAuthorFilter() {
