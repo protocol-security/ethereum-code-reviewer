@@ -495,9 +495,9 @@ def scan_commits_batch():
                 github = Github(auth=Auth.Token(github_token))
                 repo = github.get_repo(repo_name)
                 
-                # Collect all changes from all commits
-                all_changes = []
+                # Collect all changes from all commits with proper formatting
                 commit_infos = []
+                formatted_commits = []
                 
                 logger.info(f"Fetching commit data for batch scan ({len(commit_shas)} commits)...")
                 for idx, commit_sha in enumerate(commit_shas, 1):
@@ -505,12 +505,21 @@ def scan_commits_batch():
                         logger.info(f"  [{idx}/{len(commit_shas)}] Fetching commit {commit_sha[:7]}...")
                         commit = repo.get_commit(commit_sha)
                         
-                        # Get changes for this commit
+                        # Format this commit's changes properly with file context
+                        commit_changes = []
                         files_with_changes = 0
+                        
                         for file in commit.files:
                             if file.patch:
-                                all_changes.append(file.patch)
+                                # Include file name and change type for context
+                                change_type = file.status  # 'added', 'modified', 'removed', etc.
+                                commit_changes.append(f"File: {file.filename} ({change_type})\n{file.patch}")
                                 files_with_changes += 1
+                        
+                        if commit_changes:
+                            # Format this commit's changes with header
+                            commit_header = f"Commit: {commit.sha[:7]} by {commit.commit.author.name if commit.commit.author else 'Unknown'}\nMessage: {commit.commit.message[:100]}\n"
+                            formatted_commits.append(commit_header + "\n".join(commit_changes))
                         
                         logger.info(f"  [{idx}/{len(commit_shas)}] Commit {commit_sha[:7]}: {files_with_changes} files with changes")
                         
@@ -529,14 +538,14 @@ def scan_commits_batch():
                         logger.error(f"  [{idx}/{len(commit_shas)}] Error fetching commit {commit_sha[:7]}: {e}")
                         continue
                 
-                logger.info(f"Successfully fetched {len(commit_infos)} commits with {len(all_changes)} file changes")
+                logger.info(f"Successfully fetched {len(commit_infos)} commits with changes")
                 
-                if not all_changes:
+                if not formatted_commits:
                     logger.warning(f"No changes found in batch of {len(commit_shas)} commits")
                     return
                 
-                # Combine all changes into a single string
-                combined_changes = "\n\n=== NEXT COMMIT ===\n\n".join(all_changes)
+                # Combine all formatted commits with clear separators
+                combined_changes = "\n\n" + "="*80 + "\n\n".join(formatted_commits)
                 
                 logger.info(f"Analyzing combined changes ({len(combined_changes)} characters) from {len(commit_infos)} commits...")
                 
