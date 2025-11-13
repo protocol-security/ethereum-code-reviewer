@@ -1013,7 +1013,7 @@ def main():
                                 help='Weight for Llama in multi-judge mode (default: 0.1)',
                                 default=float(os.environ.get('LLAMA_WEIGHT', '0.1')))
         
-        parser.add_argument('--model', help='Specific model to use (e.g., claude-sonnet-4-5-context-1m-2025-08-07)')
+        parser.add_argument('--model', help='Specific model to use (e.g., claude-sonnet-4-5-20250929)')
         parser.add_argument('--docs-dir', help='Directory containing vulnerability documentation', default=os.environ.get('DOCS_DIR'))
         parser.add_argument('--voyage-api-key', help='Voyage AI API key for embeddings (preferred for all providers with --docs-dir, falls back to OpenAI embeddings if available)', default=os.environ.get('VOYAGE_API_KEY'))
         parser.add_argument('--voyage-model', help='Voyage AI model to use', default='voyage-3-large')

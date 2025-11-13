@@ -19,21 +19,31 @@ class ClaudeProvider(LLMProvider):
         Args:
             api_key: Anthropic API key
             **kwargs: Additional configuration options
-                - model: Claude model to use (default: claude-sonnet-4-5-context-1m-2025-08-07)
+                - model: Claude model to use (default: claude-sonnet-4-20250514)
                 - max_tokens: Maximum tokens for response (default: 4096)
                 - temperature: Sampling temperature (default: 0)
+                - use_1m_context: Whether to use 1M context window (default: True)
         """
         self.api_key = api_key
         self._client = None
-        self.model = kwargs.get('model', 'claude-sonnet-4-5-context-1m-2025-08-07')
+        self.model = kwargs.get('model', 'claude-sonnet-4-5-20250929')
         self.max_tokens = kwargs.get('max_tokens', 4096)
         self.temperature = kwargs.get('temperature', 0)
+        self.use_1m_context = kwargs.get('use_1m_context', True)
         
     @property
     def client(self):
         """Lazy initialization of Anthropic client."""
         if self._client is None:
-            self._client = anthropic.Anthropic(api_key=self.api_key)
+            # Add beta header for 1M context window support
+            default_headers = {}
+            if self.use_1m_context:
+                default_headers["anthropic-beta"] = "context-1m-2025-08-07"
+            
+            self._client = anthropic.Anthropic(
+                api_key=self.api_key,
+                default_headers=default_headers
+            )
         return self._client
     
     @client.setter
@@ -55,8 +65,8 @@ class ClaudeProvider(LLMProvider):
         """
         # Cost per 1M tokens (input, output)
         model_pricing = {
-            'claude-opus-4-5-context-1m-2025-08-07': (15.00, 75.00),
-            'claude-sonnet-4-5-context-1m-2025-08-07': (3.00, 15.00),
+            'claude-sonnet-4-5-20250929': (3.00, 15.00),  # Claude Sonnet 4.5
+            'claude-3-7-sonnet-20250219': (3.00, 15.00),  # Claude Sonnet 4 (3.7)
             'claude-3-7-sonnet-latest': (3.00, 15.00),
             'claude-3-5-sonnet-20241022': (3.00, 15.00),
             'claude-3-5-sonnet-latest': (3.00, 15.00),
