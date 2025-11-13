@@ -644,6 +644,70 @@ def scan_commits_batch():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@api_bp.route('/scan-status/<scan_type>/<identifier>', methods=['GET'])
+@login_required
+def scan_status(scan_type, identifier):
+    """Check scan status for a commit or PR."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 503
+    
+    try:
+        db_manager = get_database_manager()
+        session = db_manager.get_session()
+        
+        try:
+            from ...database import SecurityFinding
+            
+            # Parse identifier based on scan type
+            if scan_type == 'commit':
+                # identifier format: repo_name:commit_sha
+                if ':' not in identifier:
+                    return jsonify({'error': 'Invalid identifier format'}), 400
+                repo_name, commit_sha = identifier.split(':', 1)
+                
+                findings = session.query(SecurityFinding).filter(
+                    SecurityFinding.repo_name == repo_name,
+                    SecurityFinding.commit_sha == commit_sha
+                ).all()
+                
+            elif scan_type == 'pr':
+                # identifier format: repo_name:pr_number
+                if ':' not in identifier:
+                    return jsonify({'error': 'Invalid identifier format'}), 400
+                repo_name, pr_number_str = identifier.split(':', 1)
+                pr_number = int(pr_number_str)
+                
+                findings = session.query(SecurityFinding).filter(
+                    SecurityFinding.repo_name == repo_name,
+                    SecurityFinding.pr_number == pr_number
+                ).all()
+            else:
+                return jsonify({'error': 'Invalid scan type'}), 400
+            
+            if findings:
+                finding = findings[0]
+                return jsonify({
+                    'success': True,
+                    'status': 'completed',
+                    'scanned': True,
+                    'has_vulnerabilities': finding.has_vulnerabilities,
+                    'finding_uuid': str(finding.uuid)
+                })
+            else:
+                return jsonify({
+                    'success': True,
+                    'status': 'not_scanned',
+                    'scanned': False
+                })
+                
+        finally:
+            session.close()
+            
+    except Exception as e:
+        logger.error(f"Error checking scan status: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @api_bp.route('/scan-pr', methods=['POST'])
 @login_required
 def scan_pr():

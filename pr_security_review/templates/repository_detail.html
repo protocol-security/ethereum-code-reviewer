@@ -1130,10 +1130,11 @@ document.addEventListener('DOMContentLoaded', function() {
 async function scanCommit(repoName, commitSha) {
     const btnId = `scan-btn-${commitSha.substring(0, 7)}`;
     const btn = document.getElementById(btnId);
+    const actionsCell = btn.closest('.scan-actions');
     
     // Disable button and show loading state
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading-spinner"></span> Scanning...';
+    btn.innerHTML = '<span class="loading-spinner"></span> Scan running...';
     
     try {
         const response = await fetch('/api/scan-commit', {
@@ -1150,8 +1151,8 @@ async function scanCommit(repoName, commitSha) {
         const data = await response.json();
         
         if (data.success) {
-            // Reload the page to show updated status
-            window.location.reload();
+            // Start polling for status
+            pollScanStatus('commit', `${repoName}:${commitSha}`, actionsCell, commitSha.substring(0, 7));
         } else {
             alert('Scan failed: ' + (data.error || 'Unknown error'));
             btn.disabled = false;
@@ -1165,13 +1166,85 @@ async function scanCommit(repoName, commitSha) {
     }
 }
 
+// Poll scan status and update UI
+function pollScanStatus(scanType, identifier, actionsCell, shortId) {
+    const pollInterval = 3000; // Poll every 3 seconds
+    const maxPolls = 100; // Maximum 5 minutes of polling
+    let pollCount = 0;
+    
+    const poll = setInterval(async () => {
+        pollCount++;
+        
+        if (pollCount >= maxPolls) {
+            clearInterval(poll);
+            // Reload page after timeout
+            window.location.reload();
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/scan-status/${scanType}/${encodeURIComponent(identifier)}`);
+            const data = await response.json();
+            
+            if (data.success && data.scanned) {
+                // Scan completed!
+                clearInterval(poll);
+                
+                // Update the UI with new buttons
+                const repoName = identifier.split(':')[0];
+                const itemId = identifier.split(':')[1];
+                
+                if (scanType === 'commit') {
+                    actionsCell.innerHTML = `
+                        <button class="btn btn-sm btn-secondary" onclick="rescanCommit('${repoName}', '${itemId}')" id="rescan-btn-${shortId}">
+                            <i class="fas fa-redo"></i> Rescan
+                        </button>
+                        <a href="/findings/${data.finding_uuid}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                    `;
+                } else if (scanType === 'pr') {
+                    actionsCell.innerHTML = `
+                        <button class="btn btn-sm btn-secondary" onclick="rescanPR('${repoName}', ${itemId})" id="rescan-pr-btn-${itemId}">
+                            <i class="fas fa-redo"></i> Rescan
+                        </button>
+                        <a href="/findings/${data.finding_uuid}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                    `;
+                }
+                
+                // Update scan status badge
+                const statusCell = actionsCell.closest('tr').querySelector('td:nth-child(6)');
+                if (statusCell) {
+                    if (data.has_vulnerabilities) {
+                        statusCell.innerHTML = '<span class="scan-status vulnerable"><i class="fas fa-exclamation-triangle"></i> Vulnerable</span>';
+                    } else {
+                        statusCell.innerHTML = '<span class="scan-status scanned"><i class="fas fa-check-circle"></i> Scanned - Safe</span>';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error polling scan status:', error);
+            // Continue polling despite errors
+        }
+    }, pollInterval);
+}
+
 async function rescanCommit(repoName, commitSha) {
     const btnId = `rescan-btn-${commitSha.substring(0, 7)}`;
     const btn = document.getElementById(btnId);
+    const actionsCell = btn.closest('.scan-actions');
     
     // Disable button and show loading state
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading-spinner"></span> Rescanning...';
+    btn.innerHTML = '<span class="loading-spinner"></span> Scan running...';
+    
+    // Hide View button during rescan
+    const viewBtn = actionsCell.querySelector('a.btn-primary');
+    if (viewBtn) {
+        viewBtn.style.display = 'none';
+    }
     
     try {
         const response = await fetch('/api/scan-commit', {
@@ -1189,18 +1262,24 @@ async function rescanCommit(repoName, commitSha) {
         const data = await response.json();
         
         if (data.success) {
-            // Reload the page to show updated status
-            window.location.reload();
+            // Start polling for status
+            pollScanStatus('commit', `${repoName}:${commitSha}`, actionsCell, commitSha.substring(0, 7));
         } else {
             alert('Rescan failed: ' + (data.error || 'Unknown error'));
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+            if (viewBtn) {
+                viewBtn.style.display = 'inline-flex';
+            }
         }
     } catch (error) {
         console.error('Rescan error:', error);
         alert('Rescan failed: ' + error.message);
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+        if (viewBtn) {
+            viewBtn.style.display = 'inline-flex';
+        }
     }
 }
 
@@ -1208,10 +1287,11 @@ async function rescanCommit(repoName, commitSha) {
 async function scanPR(repoName, prNumber) {
     const btnId = `scan-pr-btn-${prNumber}`;
     const btn = document.getElementById(btnId);
+    const actionsCell = btn.closest('.scan-actions');
     
     // Disable button and show loading state
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading-spinner"></span> Scanning...';
+    btn.innerHTML = '<span class="loading-spinner"></span> Scan running...';
     
     try {
         const response = await fetch('/api/scan-pr', {
@@ -1228,8 +1308,8 @@ async function scanPR(repoName, prNumber) {
         const data = await response.json();
         
         if (data.success) {
-            // Reload the page to show updated status
-            window.location.reload();
+            // Start polling for status
+            pollScanStatus('pr', `${repoName}:${prNumber}`, actionsCell, prNumber);
         } else {
             alert('Scan failed: ' + (data.error || data.message || 'Unknown error'));
             btn.disabled = false;
@@ -1246,10 +1326,17 @@ async function scanPR(repoName, prNumber) {
 async function rescanPR(repoName, prNumber) {
     const btnId = `rescan-pr-btn-${prNumber}`;
     const btn = document.getElementById(btnId);
+    const actionsCell = btn.closest('.scan-actions');
     
     // Disable button and show loading state
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading-spinner"></span> Rescanning...';
+    btn.innerHTML = '<span class="loading-spinner"></span> Scan running...';
+    
+    // Hide View button during rescan
+    const viewBtn = actionsCell.querySelector('a.btn-primary');
+    if (viewBtn) {
+        viewBtn.style.display = 'none';
+    }
     
     try {
         const response = await fetch('/api/scan-pr', {
@@ -1267,18 +1354,24 @@ async function rescanPR(repoName, prNumber) {
         const data = await response.json();
         
         if (data.success) {
-            // Reload the page to show updated status
-            window.location.reload();
+            // Start polling for status
+            pollScanStatus('pr', `${repoName}:${prNumber}`, actionsCell, prNumber);
         } else {
             alert('Rescan failed: ' + (data.error || data.message || 'Unknown error'));
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+            if (viewBtn) {
+                viewBtn.style.display = 'inline-flex';
+            }
         }
     } catch (error) {
         console.error('Rescan error:', error);
         alert('Rescan failed: ' + error.message);
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-redo"></i> Rescan';
+        if (viewBtn) {
+            viewBtn.style.display = 'inline-flex';
+        }
     }
 }
 </script>
