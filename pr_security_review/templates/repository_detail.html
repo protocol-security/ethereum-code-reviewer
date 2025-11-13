@@ -491,9 +491,15 @@
                     {% endfor %}
                 </select>
                 {% if author_filter %}
-                <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name) }}" class="btn btn-sm btn-secondary">
-                    <i class="fas fa-times"></i> Clear Filter
-                </a>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.375rem; color: #4a5568; font-size: 0.875rem; cursor: pointer;">
+                        <input type="checkbox" id="show-all-checkbox" onchange="toggleShowAll()" {% if show_all %}checked{% endif %} style="cursor: pointer;">
+                        Show All ({{ commits|length }} commits)
+                    </label>
+                    <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name) }}" class="btn btn-sm btn-secondary">
+                        <i class="fas fa-times"></i> Clear Filter
+                    </a>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -583,7 +589,7 @@
     {% endif %}
     
     <!-- Pagination Controls for Commits -->
-    {% if commits %}
+    {% if commits and not show_all %}
     <div class="pagination">
         {% if current_page > 1 %}
         <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, author=author_filter) }}" class="pagination-btn">
@@ -759,10 +765,26 @@ function filterByAuthor() {
         currentUrl.searchParams.set('author', author);
     } else {
         currentUrl.searchParams.delete('author');
+        currentUrl.searchParams.delete('show_all');
     }
     
     // Reset to page 1 when filtering
     currentUrl.searchParams.delete('page');
+    
+    window.location.href = currentUrl.toString();
+}
+
+// Show all toggle functionality
+function toggleShowAll() {
+    const checkbox = document.getElementById('show-all-checkbox');
+    const currentUrl = new URL(window.location.href);
+    
+    if (checkbox.checked) {
+        currentUrl.searchParams.set('show_all', 'true');
+        currentUrl.searchParams.delete('page');
+    } else {
+        currentUrl.searchParams.delete('show_all');
+    }
     
     window.location.href = currentUrl.toString();
 }

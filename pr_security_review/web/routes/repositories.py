@@ -76,6 +76,7 @@ def repository_detail(repo_name):
         # Get pagination and filter parameters
         page = request.args.get('page', 1, type=int)
         author_filter = request.args.get('author', None, type=str)
+        show_all = request.args.get('show_all', 'false').lower() == 'true'
         page_size = 25
         
         # Ensure page is at least 1
@@ -121,10 +122,38 @@ def repository_detail(repo_name):
                     if author_filter:
                         params['author'] = author_filter
                     
-                    response = requests.get(url, headers=headers, params=params, timeout=10)
+                    # Fetch all commits if show_all is enabled and author is filtered
+                    if show_all and author_filter:
+                        github_commits = []
+                        current_page = 1
+                        max_pages = 20  # Limit to 500 commits (20 pages * 25)
+                        
+                        while current_page <= max_pages:
+                            params['page'] = current_page
+                            response = requests.get(url, headers=headers, params=params, timeout=10)
+                            
+                            if response.status_code == 200:
+                                page_commits = response.json()
+                                if not page_commits:  # No more commits
+                                    break
+                                github_commits.extend(page_commits)
+                                if len(page_commits) < page_size:  # Last page
+                                    break
+                                current_page += 1
+                            else:
+                                logger.error(f"GitHub API error on page {current_page}: {response.status_code}")
+                                break
+                    else:
+                        response = requests.get(url, headers=headers, params=params, timeout=10)
+                        
+                        if response.status_code == 200:
+                            github_commits = response.json()
+                        else:
+                            github_commits = []
+                            logger.error(f"GitHub API error: {response.status_code} - {response.text}")
+                            flash(f'Failed to fetch commits from GitHub: {response.status_code}', 'error')
                     
-                    if response.status_code == 200:
-                        github_commits = response.json()
+                    if github_commits:
                         
                         # Get all findings for this repository to match with commits
                         auth_service = get_auth_service()
@@ -165,9 +194,6 @@ def repository_detail(repo_name):
                                 }
                             
                             commits.append(commit)
-                    else:
-                        logger.error(f"GitHub API error: {response.status_code} - {response.text}")
-                        flash(f'Failed to fetch commits from GitHub: {response.status_code}', 'error')
                     
                     # Fetch pull requests from GitHub API
                     pr_url = f'https://api.github.com/repos/{owner}/{repo}/pulls'
@@ -291,6 +317,7 @@ def repository_detail(repo_name):
                              page_size=page_size,
                              current_page=page,
                              author_filter=author_filter,
+                             show_all=show_all,
                              unique_authors=unique_authors,
                              user=auth_service.get_current_user())
         
