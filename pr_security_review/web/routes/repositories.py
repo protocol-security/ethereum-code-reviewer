@@ -73,8 +73,9 @@ def repository_detail(repo_name):
             flash('Repository not found', 'error')
             return redirect(url_for('repositories_bp.repositories_list'))
         
-        # Get pagination parameters
+        # Get pagination and filter parameters
         page = request.args.get('page', 1, type=int)
+        author_filter = request.args.get('author', None, type=str)
         page_size = 25
         
         # Ensure page is at least 1
@@ -115,6 +116,10 @@ def repository_detail(repo_name):
                         'per_page': page_size,
                         'page': page
                     }
+                    
+                    # Add author filter if specified
+                    if author_filter:
+                        params['author'] = author_filter
                     
                     response = requests.get(url, headers=headers, params=params, timeout=10)
                     
@@ -276,12 +281,17 @@ def repository_detail(repo_name):
                 }
                 commits.append(commit)
         
+        # Get unique authors from commits for filter dropdown
+        unique_authors = sorted(list(set([c['author'] for c in commits if c.get('author')])))
+        
         return render_template('repository_detail.html',
                              repository=repository.to_dict(),
                              commits=commits,
                              pull_requests=pull_requests,
                              page_size=page_size,
                              current_page=page,
+                             author_filter=author_filter,
+                             unique_authors=unique_authors,
                              user=auth_service.get_current_user())
         
     except Exception as e:

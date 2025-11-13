@@ -475,10 +475,28 @@
 <!-- Commits Section -->
 <div class="tab-content commits-section" id="commits-tab">
     <div class="section-header">
-        <h2>
-            <i class="fas fa-history"></i>
-            Commits for {{ repository.name }} (Page {{ current_page }})
-        </h2>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <h2>
+                <i class="fas fa-history"></i>
+                Commits for {{ repository.name }} (Page {{ current_page }})
+            </h2>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <label for="author-filter" style="color: #4a5568; font-size: 0.875rem; font-weight: 500;">
+                    Filter by Author:
+                </label>
+                <select id="author-filter" onchange="filterByAuthor()" style="padding: 0.5rem 2rem 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.875rem; color: #2d3748; background-color: white; cursor: pointer;">
+                    <option value="">All Authors</option>
+                    {% for author in unique_authors %}
+                    <option value="{{ author }}" {% if author_filter == author %}selected{% endif %}>{{ author }}</option>
+                    {% endfor %}
+                </select>
+                {% if author_filter %}
+                <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name) }}" class="btn btn-sm btn-secondary">
+                    <i class="fas fa-times"></i> Clear Filter
+                </a>
+                {% endif %}
+            </div>
+        </div>
     </div>
     
     {% if commits %}
@@ -568,7 +586,7 @@
     {% if commits %}
     <div class="pagination">
         {% if current_page > 1 %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, author=author_filter) }}" class="pagination-btn">
             <i class="fas fa-chevron-left"></i> Previous
         </a>
         {% else %}
@@ -582,7 +600,7 @@
         </span>
         
         {% if commits|length == page_size %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1, author=author_filter) }}" class="pagination-btn">
             Next <i class="fas fa-chevron-right"></i>
         </a>
         {% else %}
@@ -731,6 +749,24 @@
 
 {% block extra_scripts %}
 <script>
+// Author filter functionality
+function filterByAuthor() {
+    const select = document.getElementById('author-filter');
+    const author = select.value;
+    const currentUrl = new URL(window.location.href);
+    
+    if (author) {
+        currentUrl.searchParams.set('author', author);
+    } else {
+        currentUrl.searchParams.delete('author');
+    }
+    
+    // Reset to page 1 when filtering
+    currentUrl.searchParams.delete('page');
+    
+    window.location.href = currentUrl.toString();
+}
+
 // Tab switching functionality
 function switchTab(tabName, evt) {
     // Hide all tabs
