@@ -51,6 +51,40 @@ class ClaudeProvider(LLMProvider):
         """Allow setting client for testing."""
         self._client = value
     
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """
+        Extract and clean JSON from Claude's response text.
+        Handles markdown code blocks and extra formatting.
+        
+        Args:
+            response_text: Raw response text from Claude
+            
+        Returns:
+            str: Cleaned JSON string
+        """
+        if not response_text:
+            raise ValueError("Empty response text")
+        
+        response_text = response_text.strip()
+        
+        # Remove markdown code blocks
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        elif response_text.startswith('```'):
+            response_text = response_text[3:]
+        
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        
+        response_text = response_text.strip()
+        
+        # Try to extract JSON object if there's extra text
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+        if json_match:
+            response_text = json_match.group(0)
+        
+        return response_text.strip()
+    
     def calculate_cost(self, input_tokens: int, output_tokens: int, model: str) -> float:
         """
         Calculate the cost for an Anthropic request.
@@ -184,27 +218,8 @@ class ClaudeProvider(LLMProvider):
                     raise ValueError("Invalid response format")
                 
                 response_text = response.content[0].text.strip() if response.content[0].text else ""
-                
-                if not response_text:
-                    raise ValueError("Empty verification response")
-                
-                # Try to extract JSON from the response (in case there's extra text)
-                # Look for JSON object pattern
-                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
-                if json_match:
-                    response_text = json_match.group(0)
-                
-                # Clean up common issues
-                response_text = response_text.strip()
-                if response_text.startswith('```json'):
-                    response_text = response_text[7:]
-                if response_text.startswith('```'):
-                    response_text = response_text[3:]
-                if response_text.endswith('```'):
-                    response_text = response_text[:-3]
-                response_text = response_text.strip()
-                
-                verification_result = json.loads(response_text)
+                cleaned_json = self._extract_json_from_response(response_text)
+                verification_result = json.loads(cleaned_json)
                 
                 # Filter findings based on verification
                 verified_findings = []
@@ -350,7 +365,9 @@ class ClaudeProvider(LLMProvider):
                 if not response.content or not hasattr(response.content[0], 'text'):
                     raise ValueError("Invalid response format")
                 
-                initial_result = json.loads(response.content[0].text.strip())
+                response_text = response.content[0].text.strip() if response.content[0].text else ""
+                cleaned_json = self._extract_json_from_response(response_text)
+                initial_result = json.loads(cleaned_json)
                 initial_result = self.validate_response(initial_result)
                 
                 # If vulnerabilities were found, verify them
