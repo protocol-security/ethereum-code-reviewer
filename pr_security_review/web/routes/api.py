@@ -426,6 +426,200 @@ def scan_commit():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@api_bp.route('/scan-commits-batch', methods=['POST'])
+@login_required
+def scan_commits_batch():
+    """Scan multiple commits as a batch (authenticated users only)."""
+    import os
+    import threading
+    from github import Github, Auth
+    
+    try:
+        data = request.get_json()
+        repo_name = data.get('repo_name')
+        commit_shas = data.get('commit_shas', [])
+        
+        if not repo_name or not commit_shas:
+            return jsonify({'error': 'Repository name and commit SHAs required'}), 400
+        
+        if not isinstance(commit_shas, list) or len(commit_shas) == 0:
+            return jsonify({'error': 'At least one commit SHA required'}), 400
+        
+        # Limit to reasonable number of commits
+        if len(commit_shas) > 100:
+            return jsonify({'error': 'Maximum 100 commits can be scanned at once'}), 400
+        
+        # Run the batch scan in a background thread
+        def run_batch_scan():
+            try:
+                # Import SecurityReview class
+                from ...__main__ import SecurityReview, CommitInfo
+                from ...config_loader import agent_config
+                
+                # Load repository-specific agent configuration if available
+                try:
+                    if agent_config.load_for_repository(repo_name):
+                        logger.info(f"Loaded repository-specific agent configuration for {repo_name}")
+                    else:
+                        logger.info(f"Using main agent configuration for {repo_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to load repository-specific agent, using main agent: {e}")
+                
+                # Get GitHub token
+                github_token = os.getenv('GITHUB_TOKEN')
+                if not github_token:
+                    logger.error("GITHUB_TOKEN not configured")
+                    return
+                
+                # Initialize SecurityReview with configuration from environment
+                provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
+                provider_kwargs = {}
+                
+                # Get docs directory if configured
+                docs_dir = os.environ.get('DOCS_DIR')
+                voyage_key = os.environ.get('VOYAGE_API_KEY')
+                voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-large')
+                
+                logger.info(f"Starting batch scan for {len(commit_shas)} commits in {repo_name}")
+                
+                # Initialize reviewer
+                reviewer = SecurityReview(
+                    provider_name,
+                    provider_kwargs,
+                    docs_dir=docs_dir,
+                    voyage_key=voyage_key,
+                    voyage_model=voyage_model
+                )
+                
+                # Get GitHub repo
+                github = Github(auth=Auth.Token(github_token))
+                repo = github.get_repo(repo_name)
+                
+                # Collect all changes from all commits
+                all_changes = []
+                commit_infos = []
+                
+                for commit_sha in commit_shas:
+                    try:
+                        commit = repo.get_commit(commit_sha)
+                        
+                        # Get changes for this commit
+                        for file in commit.files:
+                            if file.patch:
+                                all_changes.append(file.patch)
+                        
+                        # Store commit info for reference
+                        commit_info = CommitInfo(
+                            sha=commit.sha,
+                            url=commit.html_url,
+                            message=commit.commit.message,
+                            author=commit.commit.author.name if commit.commit.author else 'Unknown',
+                            date=commit.commit.author.date if commit.commit.author else None,
+                            branch=None
+                        )
+                        commit_infos.append(commit_info)
+                        
+                    except Exception as e:
+                        logger.error(f"Error fetching commit {commit_sha}: {e}")
+                        continue
+                
+                if not all_changes:
+                    logger.warning(f"No changes found in batch of {len(commit_shas)} commits")
+                    return
+                
+                # Combine all changes into a single string
+                combined_changes = "\n\n=== NEXT COMMIT ===\n\n".join(all_changes)
+                
+                # Analyze the combined changes as a single batch
+                analysis, cost_info = reviewer.analyze_security(combined_changes)
+                
+                logger.info(f"Batch analysis complete for {len(commit_shas)} commits - Vulnerabilities: {analysis.get('has_vulnerabilities', False)}")
+                
+                # Store the batch finding in database
+                if DATABASE_AVAILABLE:
+                    # Create a combined commit info representing the batch
+                    first_commit = commit_infos[0] if commit_infos else None
+                    if first_commit:
+                        batch_message = f"Batch scan of {len(commit_shas)} commits"
+                        batch_authors = list(set([c.author for c in commit_infos]))
+                        
+                        batch_commit_info = CommitInfo(
+                            sha=f"batch-{commit_shas[0][:7]}",  # Use first commit as reference
+                            url=first_commit.url,
+                            message=batch_message,
+                            author=", ".join(batch_authors[:3]) + ("..." if len(batch_authors) > 3 else ""),
+                            date=first_commit.date,
+                            branch=None
+                        )
+                        
+                        # Generate HTML content for the batch finding
+                        html_content = f"""<h1>Batch Security Review for {repo_name}</h1>
+<p><strong>Batch Size:</strong> {len(commit_shas)} commits</p>
+<p><strong>Authors:</strong> {', '.join(batch_authors)}</p>
+<h2>Commits in this Batch</h2>
+<ul>
+"""
+                        for info in commit_infos:
+                            html_content += f'<li><a href="{info.url}">{info.sha[:7]}</a> - {info.message[:100]}{"..." if len(info.message) > 100 else ""}</li>\n'
+                        
+                        html_content += f"""</ul>
+<h2>Analysis Results</h2>
+<p><strong>Confidence Score:</strong> {analysis['confidence_score']}%</p>
+<p><strong>Has Vulnerabilities:</strong> {'Yes' if analysis['has_vulnerabilities'] else 'No'}</p>
+<h3>Summary</h3>
+<p>{analysis['summary']}</p>
+"""
+                        
+                        if analysis.get('findings'):
+                            html_content += "<h3>Detailed Findings</h3>"
+                            for finding in analysis['findings']:
+                                html_content += f"""
+<h4>{finding['severity']} Severity Issue</h4>
+<ul>
+<li><strong>Description:</strong> {finding['description']}</li>
+<li><strong>Recommendation:</strong> {finding['recommendation']}</li>
+<li><strong>Confidence:</strong> {finding['confidence']}%</li>
+</ul>
+"""
+                        
+                        # Store in database
+                        db_manager = get_database_manager()
+                        finding_uuid = db_manager.store_finding(
+                            html_content=html_content,
+                            repo_name=repo_name,
+                            commit_info=batch_commit_info,
+                            analysis=analysis,
+                            metadata={
+                                'cost_info': str(cost_info) if cost_info else None,
+                                'batch_size': len(commit_shas),
+                                'commit_shas': ','.join(commit_shas)
+                            }
+                        )
+                        
+                        logger.info(f"Stored batch finding {finding_uuid} for {len(commit_shas)} commits in {repo_name}")
+                else:
+                    logger.warning("Database not available, batch scan results not stored")
+                    
+            except Exception as e:
+                logger.error(f"Error in batch scan: {e}", exc_info=True)
+        
+        # Start the batch scan in background
+        scan_thread = threading.Thread(target=run_batch_scan)
+        scan_thread.daemon = True
+        scan_thread.start()
+        
+        logger.info(f"Batch scan queued for {len(commit_shas)} commits in {repo_name}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Batch scan queued for {len(commit_shas)} commits. This may take a few moments.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error queueing batch scan: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @api_bp.route('/scan-pr', methods=['POST'])
 @login_required
 def scan_pr():
