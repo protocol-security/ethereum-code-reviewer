@@ -499,14 +499,20 @@ def scan_commits_batch():
                 all_changes = []
                 commit_infos = []
                 
-                for commit_sha in commit_shas:
+                logger.info(f"Fetching commit data for batch scan ({len(commit_shas)} commits)...")
+                for idx, commit_sha in enumerate(commit_shas, 1):
                     try:
+                        logger.info(f"  [{idx}/{len(commit_shas)}] Fetching commit {commit_sha[:7]}...")
                         commit = repo.get_commit(commit_sha)
                         
                         # Get changes for this commit
+                        files_with_changes = 0
                         for file in commit.files:
                             if file.patch:
                                 all_changes.append(file.patch)
+                                files_with_changes += 1
+                        
+                        logger.info(f"  [{idx}/{len(commit_shas)}] Commit {commit_sha[:7]}: {files_with_changes} files with changes")
                         
                         # Store commit info for reference
                         commit_info = CommitInfo(
@@ -520,8 +526,10 @@ def scan_commits_batch():
                         commit_infos.append(commit_info)
                         
                     except Exception as e:
-                        logger.error(f"Error fetching commit {commit_sha}: {e}")
+                        logger.error(f"  [{idx}/{len(commit_shas)}] Error fetching commit {commit_sha[:7]}: {e}")
                         continue
+                
+                logger.info(f"Successfully fetched {len(commit_infos)} commits with {len(all_changes)} file changes")
                 
                 if not all_changes:
                     logger.warning(f"No changes found in batch of {len(commit_shas)} commits")
@@ -530,10 +538,17 @@ def scan_commits_batch():
                 # Combine all changes into a single string
                 combined_changes = "\n\n=== NEXT COMMIT ===\n\n".join(all_changes)
                 
+                logger.info(f"Analyzing combined changes ({len(combined_changes)} characters) from {len(commit_infos)} commits...")
+                
                 # Analyze the combined changes as a single batch
                 analysis, cost_info = reviewer.analyze_security(combined_changes)
                 
-                logger.info(f"Batch analysis complete for {len(commit_shas)} commits - Vulnerabilities: {analysis.get('has_vulnerabilities', False)}")
+                logger.info(f"Batch analysis complete for {len(commit_shas)} commits:")
+                logger.info(f"  - Vulnerabilities found: {analysis.get('has_vulnerabilities', False)}")
+                logger.info(f"  - Confidence score: {analysis.get('confidence_score', 0)}%")
+                logger.info(f"  - Number of findings: {len(analysis.get('findings', []))}")
+                if cost_info:
+                    logger.info(f"  - Analysis cost: {cost_info}")
                 
                 # Store the batch finding in database
                 if DATABASE_AVAILABLE:

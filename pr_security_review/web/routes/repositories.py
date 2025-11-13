@@ -363,6 +363,40 @@ def repository_detail(repo_name):
                 }
                 commits.append(commit)
         
+        # Fetch batch/combined scans for this repository
+        batch_scans = []
+        try:
+            from ...database import SecurityFinding
+            session = db_manager.get_session()
+            try:
+                # Query for findings that have batch_size in metadata
+                batch_findings = session.query(SecurityFinding).filter(
+                    SecurityFinding.repo_name == repo_name,
+                    SecurityFinding.extra_metadata['batch_size'].astext.isnot(None)
+                ).order_by(SecurityFinding.created_at.desc()).limit(50).all()
+                
+                for finding in batch_findings:
+                    batch_metadata = finding.extra_metadata or {}
+                    batch_size = batch_metadata.get('batch_size', 0)
+                    commit_shas = batch_metadata.get('commit_shas', '').split(',') if batch_metadata.get('commit_shas') else []
+                    
+                    batch_scan = {
+                        'uuid': str(finding.uuid),
+                        'batch_size': batch_size,
+                        'commit_shas': commit_shas[:3],  # Show first 3 commits
+                        'total_commits': len(commit_shas),
+                        'has_vulnerabilities': finding.has_vulnerabilities,
+                        'confidence_score': finding.confidence_score,
+                        'created_at': finding.created_at.strftime('%Y-%m-%d %H:%M') if finding.created_at else 'N/A',
+                        'author': finding.author,
+                        'findings_count': finding.findings_count or 0
+                    }
+                    batch_scans.append(batch_scan)
+            finally:
+                session.close()
+        except Exception as e:
+            logger.warning(f"Error fetching batch scans: {e}")
+        
         # Get all authors with their commit counts (need to fetch more commits to get accurate counts)
         author_commit_counts = {}
         
@@ -408,6 +442,7 @@ def repository_detail(repo_name):
                              repository=repository.to_dict(),
                              commits=commits,
                              pull_requests=pull_requests,
+                             batch_scans=batch_scans,
                              page_size=page_size,
                              per_page=per_page,
                              current_page=page,

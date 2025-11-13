@@ -470,6 +470,9 @@
     <button class="tab-btn" onclick="switchTab('prs', event)">
         <i class="fas fa-code-pull-request"></i> Pull Requests
     </button>
+    <button class="tab-btn" onclick="switchTab('batch', event)">
+        <i class="fas fa-layer-group"></i> Combined Scans {% if batch_scans %}<span style="background: #667eea; color: white; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; margin-left: 0.25rem;">{{ batch_scans|length }}</span>{% endif %}
+    </button>
 </div>
 
 <!-- Commits Section -->
@@ -801,6 +804,104 @@
             Next <i class="fas fa-chevron-right"></i>
         </button>
         {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Combined Scans Section -->
+<div class="tab-content commits-section" id="batch-tab">
+    <div class="section-header">
+        <h2>
+            <i class="fas fa-layer-group"></i>
+            Combined Scans for {{ repository.name }}
+        </h2>
+    </div>
+    
+    {% if batch_scans %}
+    <table class="commits-table">
+        <thead>
+            <tr>
+                <th>Scan ID</th>
+                <th>Commits</th>
+                <th>Author(s)</th>
+                <th>Scanned At</th>
+                <th>Status</th>
+                <th>Findings</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for scan in batch_scans %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('findings_bp.triage_finding', finding_uuid=scan.uuid) }}" class="commit-sha">
+                        Batch-{{ scan.uuid[:8] }}
+                    </a>
+                </td>
+                <td>
+                    <div style="font-size: 0.875rem; color: #2d3748;">
+                        <strong>{{ scan.batch_size }}</strong> commits
+                        <div style="font-size: 0.75rem; color: #718096; margin-top: 0.25rem;">
+                            {% for sha in scan.commit_shas %}
+                            <span class="commit-sha" style="font-size: 0.75rem;">{{ sha[:7] }}</span>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                            {% if scan.total_commits > 3 %}
+                            <span style="color: #718096;">... +{{ scan.total_commits - 3 }} more</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="commit-author">
+                        {{ scan.author }}
+                    </div>
+                </td>
+                <td>
+                    <div class="commit-date">
+                        {{ scan.created_at }}
+                    </div>
+                </td>
+                <td>
+                    {% if not scan.has_vulnerabilities %}
+                    <span class="scan-status scanned">
+                        <i class="fas fa-check-circle"></i> Safe
+                    </span>
+                    {% else %}
+                    <span class="scan-status vulnerable">
+                        <i class="fas fa-exclamation-triangle"></i> Vulnerable
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="font-size: 0.875rem; color: #2d3748;">
+                        {% if scan.findings_count > 0 %}
+                        <span style="color: #c53030; font-weight: 600;">{{ scan.findings_count }}</span> finding{{ 's' if scan.findings_count != 1 else '' }}
+                        {% else %}
+                        <span style="color: #2f855a; font-weight: 600;">0</span> findings
+                        {% endif %}
+                        <div style="font-size: 0.75rem; color: #718096; margin-top: 0.25rem;">
+                            Confidence: {{ scan.confidence_score }}%
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="scan-actions">
+                        <a href="{{ url_for('findings_bp.triage_finding', finding_uuid=scan.uuid) }}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-eye"></i> View Report
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-layer-group"></i>
+        <p>No combined scans found for this repository</p>
+        <p style="font-size: 0.875rem; color: #718096; margin-top: 0.5rem;">
+            Select multiple commits in the Commits tab and click "Scan Selected" to create a combined scan.
+        </p>
     </div>
     {% endif %}
 </div>
