@@ -140,7 +140,7 @@ class TelegramNotifier:
                         "chat_id": target_chat_id,
                         "text": chunk,
                         "parse_mode": parse_mode,
-                        "disable_web_page_preview": False  # Enable preview for the link
+                        "disable_web_page_preview": True  # Disable preview to ensure all links are clickable
                     }
                 )
                 response.raise_for_status()
