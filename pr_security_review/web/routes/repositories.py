@@ -75,7 +75,8 @@ def repository_detail(repo_name):
         
         # Get pagination and filter parameters
         page = request.args.get('page', 1, type=int)
-        author_filter = request.args.get('author', None, type=str)
+        author_filter_param = request.args.get('authors', None, type=str)
+        author_filters = author_filter_param.split(',') if author_filter_param else []
         show_all = request.args.get('show_all', 'false').lower() == 'true'
         page_size = 25
         
@@ -118,12 +119,59 @@ def repository_detail(repo_name):
                         'page': page
                     }
                     
-                    # Add author filter if specified
-                    if author_filter:
-                        params['author'] = author_filter
-                    
-                    # Fetch all commits if show_all is enabled and author is filtered
-                    if show_all and author_filter:
+                    # Fetch commits for single or multiple authors
+                    # If multiple authors selected, we need to fetch separately and merge
+                    if author_filters:
+                        # GitHub API doesn't support multiple authors, so we fetch separately and merge
+                        all_author_commits = []
+                        
+                        if show_all:
+                            # Fetch all commits for each author
+                            for author in author_filters:
+                                author_params = params.copy()
+                                author_params['author'] = author
+                                author_commits = []
+                                current_page = 1
+                                max_pages = 20  # Limit to 500 commits per author
+                                
+                                while current_page <= max_pages:
+                                    author_params['page'] = current_page
+                                    response = requests.get(url, headers=headers, params=author_params, timeout=10)
+                                    
+                                    if response.status_code == 200:
+                                        page_commits = response.json()
+                                        if not page_commits:
+                                            break
+                                        author_commits.extend(page_commits)
+                                        if len(page_commits) < page_size:
+                                            break
+                                        current_page += 1
+                                    else:
+                                        logger.error(f"GitHub API error for author {author} on page {current_page}: {response.status_code}")
+                                        break
+                                
+                                all_author_commits.extend(author_commits)
+                            
+                            github_commits = all_author_commits
+                        else:
+                            # Paginated view with multiple authors
+                            for author in author_filters:
+                                author_params = params.copy()
+                                author_params['author'] = author
+                                response = requests.get(url, headers=headers, params=author_params, timeout=10)
+                                
+                                if response.status_code == 200:
+                                    all_author_commits.extend(response.json())
+                                else:
+                                    logger.error(f"GitHub API error for author {author}: {response.status_code}")
+                            
+                            # Sort by date and paginate manually
+                            all_author_commits.sort(key=lambda x: x.get('commit', {}).get('author', {}).get('date', ''), reverse=True)
+                            start_idx = (page - 1) * page_size
+                            end_idx = start_idx + page_size
+                            github_commits = all_author_commits[start_idx:end_idx]
+                    elif show_all:
+                        # Show all without author filter (keep original logic for backwards compatibility)
                         github_commits = []
                         current_page = 1
                         max_pages = 20  # Limit to 500 commits (20 pages * 25)
@@ -144,6 +192,7 @@ def repository_detail(repo_name):
                                 logger.error(f"GitHub API error on page {current_page}: {response.status_code}")
                                 break
                     else:
+                        # No filters, standard pagination
                         response = requests.get(url, headers=headers, params=params, timeout=10)
                         
                         if response.status_code == 200:
@@ -316,7 +365,7 @@ def repository_detail(repo_name):
                              pull_requests=pull_requests,
                              page_size=page_size,
                              current_page=page,
-                             author_filter=author_filter,
+                             author_filters=author_filters,
                              show_all=show_all,
                              unique_authors=unique_authors,
                              user=auth_service.get_current_user())

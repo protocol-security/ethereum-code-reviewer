@@ -480,24 +480,33 @@
                 <i class="fas fa-history"></i>
                 Commits for {{ repository.name }} (Page {{ current_page }})
             </h2>
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
                 <label for="author-filter" style="color: #4a5568; font-size: 0.875rem; font-weight: 500;">
-                    Filter by Author:
+                    Filter by Authors:
                 </label>
-                <select id="author-filter" onchange="filterByAuthor()" style="padding: 0.5rem 2rem 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.875rem; color: #2d3748; background-color: white; cursor: pointer;">
-                    <option value="">All Authors</option>
+                <select id="author-filter" multiple size="1" onchange="updateAuthorFilter()" style="min-width: 200px; padding: 0.5rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.875rem; color: #2d3748; background-color: white; cursor: pointer;">
                     {% for author in unique_authors %}
-                    <option value="{{ author }}" {% if author_filter == author %}selected{% endif %}>{{ author }}</option>
+                    <option value="{{ author }}" {% if author in author_filters %}selected{% endif %}>{{ author }}</option>
                     {% endfor %}
                 </select>
-                {% if author_filter %}
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                {% if author_filters %}
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                        {% for author in author_filters %}
+                        <span style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; background: #667eea; color: white; border-radius: 9999px; font-size: 0.75rem;">
+                            {{ author }}
+                            <button onclick="removeAuthor('{{ author }}')" style="background: none; border: none; color: white; cursor: pointer; padding: 0; margin: 0; display: flex; align-items: center;">
+                                <i class="fas fa-times" style="font-size: 0.625rem;"></i>
+                            </button>
+                        </span>
+                        {% endfor %}
+                    </div>
                     <label style="display: flex; align-items: center; gap: 0.375rem; color: #4a5568; font-size: 0.875rem; cursor: pointer;">
                         <input type="checkbox" id="show-all-checkbox" onchange="toggleShowAll()" {% if show_all %}checked{% endif %} style="cursor: pointer;">
                         Show All ({{ commits|length }} commits)
                     </label>
                     <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name) }}" class="btn btn-sm btn-secondary">
-                        <i class="fas fa-times"></i> Clear Filter
+                        <i class="fas fa-times"></i> Clear All
                     </a>
                 </div>
                 {% endif %}
@@ -592,7 +601,7 @@
     {% if commits and not show_all %}
     <div class="pagination">
         {% if current_page > 1 %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, author=author_filter) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page-1, authors=author_filters|join(',')) }}" class="pagination-btn">
             <i class="fas fa-chevron-left"></i> Previous
         </a>
         {% else %}
@@ -606,7 +615,7 @@
         </span>
         
         {% if commits|length == page_size %}
-        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1, author=author_filter) }}" class="pagination-btn">
+        <a href="{{ url_for('repositories_bp.repository_detail', repo_name=repository.name, page=current_page+1, authors=author_filters|join(',')) }}" class="pagination-btn">
             Next <i class="fas fa-chevron-right"></i>
         </a>
         {% else %}
@@ -756,15 +765,15 @@
 {% block extra_scripts %}
 <script>
 // Author filter functionality
-function filterByAuthor() {
+function updateAuthorFilter() {
     const select = document.getElementById('author-filter');
-    const author = select.value;
+    const selectedAuthors = Array.from(select.selectedOptions).map(option => option.value);
     const currentUrl = new URL(window.location.href);
     
-    if (author) {
-        currentUrl.searchParams.set('author', author);
+    if (selectedAuthors.length > 0) {
+        currentUrl.searchParams.set('authors', selectedAuthors.join(','));
     } else {
-        currentUrl.searchParams.delete('author');
+        currentUrl.searchParams.delete('authors');
         currentUrl.searchParams.delete('show_all');
     }
     
@@ -772,6 +781,26 @@ function filterByAuthor() {
     currentUrl.searchParams.delete('page');
     
     window.location.href = currentUrl.toString();
+}
+
+// Remove specific author from filter
+function removeAuthor(authorToRemove) {
+    const currentUrl = new URL(window.location.href);
+    const authorsParam = currentUrl.searchParams.get('authors');
+    
+    if (authorsParam) {
+        const authors = authorsParam.split(',').filter(author => author !== authorToRemove);
+        
+        if (authors.length > 0) {
+            currentUrl.searchParams.set('authors', authors.join(','));
+        } else {
+            currentUrl.searchParams.delete('authors');
+            currentUrl.searchParams.delete('show_all');
+        }
+        
+        currentUrl.searchParams.delete('page');
+        window.location.href = currentUrl.toString();
+    }
 }
 
 // Show all toggle functionality
