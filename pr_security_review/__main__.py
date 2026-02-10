@@ -1137,6 +1137,15 @@ def main():
         if args.llm_synthesis_system_prompt_synthesize:
             os.environ['LLM_SYNTHESIS_SYSTEM_PROMPT_SYNTHESIZE'] = args.llm_synthesis_system_prompt_synthesize
         
+        # Auto-detect queue listener mode if AMQP_URL is set and no other mode is explicitly requested
+        if not args.listen_queue and args.amqp_url and not any([
+            args.input_text, args.github_app, args.file, args.recent_prs, args.pr_url,
+            args.monitor_add, args.monitor_remove, args.monitor_list,
+            args.monitor_check, args.monitor_continuous, args.analyze_commit
+        ]):
+            print("ℹ️  Auto-detected queue listener mode (AMQP_URL is set)")
+            args.listen_queue = True
+
         # Handle --input-text mode for direct text analysis
         if args.input_text:
             # Read text from stdin
