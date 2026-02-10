@@ -182,8 +182,10 @@ CRITICAL: Your response must be ONLY the following JSON object, with no addition
                 provider="anthropic (synthesis)"
             )
             
-            # Parse response
-            result = json.loads(response.content[0].text.strip())
+            # Parse response using the same robust JSON extraction as the anthropic provider
+            response_text = response.content[0].text.strip()
+            cleaned_json = anthropic._extract_json_from_response(response_text)
+            result = json.loads(cleaned_json)
             return anthropic.validate_response(result), cost_info
             
         except Exception as e:

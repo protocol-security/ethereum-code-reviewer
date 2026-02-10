@@ -54,7 +54,7 @@ class ClaudeProvider(LLMProvider):
     def _extract_json_from_response(self, response_text: str) -> str:
         """
         Extract and clean JSON from Claude's response text.
-        Handles markdown code blocks and extra formatting.
+        Handles markdown code blocks, extra formatting, and deeply nested JSON.
         
         Args:
             response_text: Raw response text from Claude
@@ -78,12 +78,50 @@ class ClaudeProvider(LLMProvider):
         
         response_text = response_text.strip()
         
-        # Try to extract JSON object if there's extra text
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
-        if json_match:
-            response_text = json_match.group(0)
+        # Try direct parse first (most common case)
+        try:
+            json.loads(response_text)
+            return response_text
+        except json.JSONDecodeError:
+            pass
         
-        return response_text.strip()
+        # Find the outermost JSON object using bracket matching
+        # This handles arbitrarily deep nesting unlike regex
+        start_idx = response_text.find('{')
+        if start_idx == -1:
+            return response_text
+        
+        depth = 0
+        in_string = False
+        escape_next = False
+        
+        for i in range(start_idx, len(response_text)):
+            char = response_text[i]
+            
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+            
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            
+            if in_string:
+                continue
+            
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    return response_text[start_idx:i + 1]
+        
+        # If we couldn't find a balanced JSON object, return from start_idx to end
+        return response_text[start_idx:]
     
     def calculate_cost(self, input_tokens: int, output_tokens: int, model: str) -> float:
         """
@@ -392,8 +430,12 @@ class ClaudeProvider(LLMProvider):
             except json.JSONDecodeError as e:
                 print(f"Warning: Failed to parse Claude's response as JSON")
                 print(f"JSON Error: {str(e)}")
-                if response_text and len(response_text) < 1000:
-                    print(f"Response text: {response_text}")
+                if response_text:
+                    preview = response_text[:500] if len(response_text) > 500 else response_text
+                    print(f"Raw response text ({len(response_text)} chars): {preview}")
+                if 'cleaned_json' in locals() and cleaned_json:
+                    preview = cleaned_json[:500] if len(cleaned_json) > 500 else cleaned_json
+                    print(f"Extracted JSON ({len(cleaned_json)} chars): {preview}")
                 return {
                     "confidence_score": 0,
                     "has_vulnerabilities": False,
