@@ -268,9 +268,6 @@ class QueueListener:
         """
         report = f"""## Security Analysis Report
 
-**Confidence Score:** {analysis.get('confidence_score', 0)}%
-**Vulnerabilities Detected:** {'Yes' if analysis.get('has_vulnerabilities') else 'No'}
-
 ### Summary
 {analysis.get('summary', 'No summary available')}
 
