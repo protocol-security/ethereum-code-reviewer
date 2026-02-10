@@ -276,13 +276,13 @@ class QueueListener:
 
 """
         
-        if cost_info and cost_info.total_cost > 0:
-            report += f"""### Analysis Cost
-- **Total Cost:** ${cost_info.total_cost:.4f}
-- **Input Tokens:** {cost_info.input_tokens}
-- **Output Tokens:** {cost_info.output_tokens}
-- **Model:** {cost_info.model}
-- **Provider:** {cost_info.provider}
+#         if cost_info and cost_info.total_cost > 0:
+#             report += f"""### Analysis Cost
+# - **Total Cost:** ${cost_info.total_cost:.4f}
+# - **Input Tokens:** {cost_info.input_tokens}
+# - **Output Tokens:** {cost_info.output_tokens}
+# - **Model:** {cost_info.model}
+# - **Provider:** {cost_info.provider}
 
 """
         
