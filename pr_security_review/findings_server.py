@@ -14,6 +14,7 @@ from typing import Dict, Optional
 import markdown
 from markdown.extensions.fenced_code import FencedCodeExtension
 import logging
+from urllib.parse import urlparse
 
 # Import database layer
 try:
@@ -719,12 +720,20 @@ class FindingsServer:
             str: Base URL for accessing findings
         """
         # Try to determine public URL
-        # First check if FINDINGS_SERVER_URL environment variable is set
-        if url := os.environ.get('FINDINGS_SERVER_URL'):
+        # Prefer explicit findings server URL, then fallback to BASE_URL for compatibility
+        url = os.environ.get('FINDINGS_SERVER_URL') or os.environ.get('BASE_URL')
+        if url:
+            # Keep the configured URL as-is, but ensure it's absolute and normalized
             url = url.rstrip('/')
-            # Make sure the URL includes the port if it's a localhost URL and doesn't already specify a port
-            if ('localhost' in url or '127.0.0.1' in url) and not re.search(r':\d+$', url):
+            if not re.match(r'^https?://', url):
+                url = f"https://{url}"
+
+            parsed = urlparse(url)
+            host = parsed.hostname or ''
+            # Make sure localhost-style URLs include the findings port if not already present
+            if host in ('localhost', '127.0.0.1', '0.0.0.0') and parsed.port is None:
                 url = f"{url}:{self.port}"
+
             return url
             
         # Otherwise use local URL (will only work for local access)

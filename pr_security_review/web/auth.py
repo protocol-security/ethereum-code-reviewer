@@ -207,19 +207,20 @@ class AuthService:
         """Check if current user is an admin."""
         if not self.is_authenticated():
             return False
-        
+
+        user_email = self.get_current_user()['email']
+
         # Check if user is admin in the database
         if DATABASE_AVAILABLE:
             try:
                 db_manager = get_database_manager()
-                user_email = self.get_current_user()['email']
-                return db_manager.is_admin(user_email)
+                if db_manager.is_admin(user_email):
+                    return True
             except Exception as e:
                 logger.error(f"Error checking admin status: {e}")
-                return False
-        
-        # Fallback to environmental variable check
-        return self.get_current_user()['email'] in self.authorized_emails
+
+        # Fallback for env-configured admins (including users created before config changes)
+        return user_email in self.authorized_emails
     
     def is_owner(self) -> bool:
         """Check if current user is an owner."""
