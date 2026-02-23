@@ -17,7 +17,7 @@ inputs:
   claude-model:
     description: 'Specific Claude model to use'
     required: false
-    default: 'claude-sonnet-4-5-20250929'
+    default: 'claude-sonnet-4-6'
   gpt-model:
     description: 'Specific GPT model to use (default: gpt-4.1)'
     required: false

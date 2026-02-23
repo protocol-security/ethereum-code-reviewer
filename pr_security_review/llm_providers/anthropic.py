@@ -26,7 +26,7 @@ class ClaudeProvider(LLMProvider):
         """
         self.api_key = api_key
         self._client = None
-        self.model = kwargs.get('model', 'claude-sonnet-4-5-20250929')
+        self.model = kwargs.get('model', 'claude-sonnet-4-6')
         self.max_tokens = kwargs.get('max_tokens', 4096)
         self.temperature = kwargs.get('temperature', 0)
         self.use_1m_context = kwargs.get('use_1m_context', True)
@@ -137,6 +137,9 @@ class ClaudeProvider(LLMProvider):
         """
         # Cost per 1M tokens (input, output)
         model_pricing = {
+            'claude-sonnet-4-6': (3.00, 15.00),
+            'claude-opus-4-6': (5.00, 25.00),
+            'claude-haiku-4-5': (1.00, 5.00),
             'claude-sonnet-4-5-20250929': (3.00, 15.00),  # Claude Sonnet 4.5
             'claude-3-7-sonnet-20250219': (3.00, 15.00),  # Claude Sonnet 4 (3.7)
             'claude-3-7-sonnet-latest': (3.00, 15.00),
