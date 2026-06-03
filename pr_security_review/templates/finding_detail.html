@@ -377,6 +377,30 @@
         color: inherit;
         padding: 0;
     }
+
+    .reasoning-log {
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid #e2e8f0;
+    }
+
+    .reasoning-log summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #2d3748;
+        list-style: none;
+    }
+
+    .reasoning-log summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .reasoning-log-panel {
+        margin-top: 1rem;
+        background: #f7fafc;
+        border-radius: 8px;
+        padding: 1rem;
+    }
     
     .triage-panel {
         background: white;
@@ -766,6 +790,55 @@
                 <!-- Notes will be loaded here -->
             </div>
         </div>
+
+        {% if finding.metadata and finding.metadata.reasoning_log %}
+        <details class="reasoning-log">
+            <summary>
+                <i class="fas fa-magnifying-glass"></i>
+                Reasoning Log
+            </summary>
+            <div class="reasoning-log-panel">
+                <p style="font-size: 0.875rem; color: #4a5568;">
+                    Raw Claude Agent SDK output and transcript captured for this review.
+                </p>
+                <p style="font-size: 0.875rem; color: #4a5568; margin-bottom: 0.75rem;">
+                    <strong>Agent file:</strong> {{ finding.metadata.reasoning_log.agent_file_path }}
+                </p>
+                {% if finding.metadata.reasoning_log.branch_name %}
+                <p style="font-size: 0.875rem; color: #4a5568; margin-bottom: 0.5rem;">
+                    <strong>Branch:</strong> {{ finding.metadata.reasoning_log.branch_name }}
+                </p>
+                {% endif %}
+                {% if finding.metadata.reasoning_log.hardfork_name %}
+                <p style="font-size: 0.875rem; color: #4a5568; margin-bottom: 0.5rem;">
+                    <strong>Hardfork:</strong> {{ finding.metadata.reasoning_log.hardfork_name }}
+                </p>
+                {% endif %}
+                {% if finding.metadata.reasoning_log.baseline_sha or finding.metadata.reasoning_log.head_sha %}
+                <p style="font-size: 0.875rem; color: #4a5568; margin-bottom: 0.75rem;">
+                    <strong>Range:</strong> {{ finding.metadata.reasoning_log.baseline_sha or 'latest commit only' }} -> {{ finding.metadata.reasoning_log.head_sha or 'unknown' }}
+                </p>
+                {% endif %}
+                <p style="font-size: 0.875rem; margin-bottom: 1rem;">
+                    <a href="{{ url_for('findings_bp.reasoning_log', finding_uuid=finding.uuid) }}" target="_blank" rel="noopener noreferrer">
+                        Open JSON reasoning log
+                    </a>
+                </p>
+                {% if finding.metadata.reasoning_log.selected_docs %}
+                <h4>Selected Docs</h4>
+                <pre>{{ finding.metadata.reasoning_log.selected_docs | join('\n') }}</pre>
+                {% endif %}
+                {% if finding.metadata.reasoning_log.docs_context %}
+                <h4>Docs Context</h4>
+                <pre>{{ finding.metadata.reasoning_log.docs_context }}</pre>
+                {% endif %}
+                <h4>Raw Output</h4>
+                <pre>{{ finding.metadata.reasoning_log.raw_output }}</pre>
+                <h4>Transcript</h4>
+                <pre>{{ finding.metadata.reasoning_log.transcript | tojson(indent=2) }}</pre>
+            </div>
+        </details>
+        {% endif %}
         
     </div>
     {% endif %}

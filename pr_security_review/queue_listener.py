@@ -13,6 +13,12 @@ from urllib.parse import urlparse
 import pika
 import pika.exceptions
 
+try:
+    from .database import get_database_manager
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+
 
 class QueueListener:
     """Handles RabbitMQ/AMQP queue listening and message processing for security analysis."""
@@ -143,8 +149,18 @@ class QueueListener:
             # Track time for analysis
             start_time = time.time()
             
+            repo_name = None
+            if DATABASE_AVAILABLE:
+                try:
+                    db_manager = get_database_manager()
+                    repository = db_manager.get_repository_by_id(int(repoId))
+                    if repository:
+                        repo_name = repository.name
+                except Exception:
+                    repo_name = None
+
             # Perform security analysis
-            analysis, cost_info = self.security_reviewer.analyze_security(content)
+            analysis, cost_info = self.security_reviewer.analyze_security(content, repo_name=repo_name)
             
             # Calculate time spent in seconds
             end_time = time.time()

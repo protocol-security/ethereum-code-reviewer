@@ -179,6 +179,68 @@
         font-size: 0.75rem;
         font-family: monospace;
     }
+
+    .branch-config-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .branch-config-item {
+        padding: 0.625rem 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+    }
+
+    .branch-config-top {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.375rem;
+        flex-wrap: wrap;
+    }
+
+    .sync-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+
+    .sync-status.reviewed {
+        background: #c6f6d5;
+        color: #276749;
+    }
+
+    .sync-status.ready {
+        background: #bee3f8;
+        color: #2b6cb0;
+    }
+
+    .sync-status.sync_error,
+    .sync-status.review_error {
+        background: #fed7d7;
+        color: #c53030;
+    }
+
+    .branch-config-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        font-size: 0.75rem;
+        color: #4a5568;
+    }
+
+    .branch-config-meta code {
+        font-size: 0.72rem;
+    }
     
     .badge {
         padding: 0.25rem 0.75rem;
@@ -375,11 +437,35 @@
                         </div>
                     </td>
                     <td>
-                        <div class="branch-tags">
-                            {% for branch in repo.branches %}
-                                <span class="branch-tag">{{ branch }}</span>
-                            {% endfor %}
-                        </div>
+                        {% if repo.branch_configs %}
+                            <div class="branch-config-list">
+                                {% for branch in repo.branch_configs %}
+                                    <div class="branch-config-item">
+                                        <div class="branch-config-top">
+                                            <span class="branch-tag">{{ branch.branch_name }}</span>
+                                            <span class="sync-status {{ branch.local_sync_status or 'pending' }}">
+                                                {{ branch.local_sync_status or 'pending' }}
+                                            </span>
+                                        </div>
+                                        <div class="branch-config-meta">
+                                            <div>Baseline: {% if branch.starting_commit_sha %}<code>{{ branch.starting_commit_sha[:12] }}</code>{% else %}latest commit only{% endif %}</div>
+                                            <div>Hardfork: {{ branch.hardfork_name or 'not set' }}</div>
+                                            <div>Seen: {% if branch.last_seen_head_sha %}<code>{{ branch.last_seen_head_sha[:12] }}</code>{% else %}none{% endif %}</div>
+                                            <div>Reviewed: {% if branch.last_reviewed_head_sha %}<code>{{ branch.last_reviewed_head_sha[:12] }}</code>{% else %}none{% endif %}</div>
+                                            {% if branch.last_sync_error %}
+                                                <div style="color: #c53030;">Error: {{ branch.last_sync_error|truncate(120) }}</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="branch-tags">
+                                {% for branch in repo.branches %}
+                                    <span class="branch-tag">{{ branch }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
                     </td>
                     <td>
                         <div class="telegram-info">
@@ -425,10 +511,6 @@
                                 <i class="fas fa-edit"></i>
                                 Edit
                             </a>
-                            <a href="{{ url_for('admin_bp.repositories_bp.documents', repo_name=repo.name) }}" class="btn-sm" style="background: #48bb78; color: white;">
-                                <i class="fas fa-file-alt"></i>
-                                Documents
-                            </a>
                             <button class="btn-sm btn-delete" onclick="deleteRepository('{{ repo.name }}')">
                                 <i class="fas fa-trash"></i>
                                 Delete
@@ -446,20 +528,6 @@
             <p>No repositories have been configured yet. Add your first repository to get started.</p>
         </div>
         {% endif %}
-    </div>
-</div>
-
-<!-- Agent Management Section -->
-<div class="admin-section">
-    <div class="admin-actions">
-        <div class="admin-title">
-            <i class="fas fa-robot"></i>
-            AI Agent Management
-        </div>
-        <a href="{{ url_for('admin_bp.agents_bp.list_agents') }}" class="btn-primary">
-            <i class="fas fa-cog"></i>
-            Manage Agents
-        </a>
     </div>
 </div>
 

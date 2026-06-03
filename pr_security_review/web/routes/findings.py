@@ -2,9 +2,8 @@
 Findings routes blueprint for viewing and managing security findings.
 """
 
-import os
 import logging
-from flask import Blueprint, render_template, redirect, url_for, request, flash, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, flash, current_app, jsonify
 from ..auth import get_auth_service
 from ..decorators import login_required
 from ..services import FindingsService, RepositoryService, PaginationService
@@ -193,6 +192,8 @@ def triage_finding(finding_uuid):
             ]
             for field in sensitive_fields:
                 finding_data.pop(field, None)
+            if finding_data.get('metadata'):
+                finding_data['metadata'].pop('reasoning_log', None)
         
         return render_template('finding_detail.html', 
                              finding=finding_data,
@@ -203,6 +204,32 @@ def triage_finding(finding_uuid):
     except Exception as e:
         logger.error(f"Error retrieving finding for triage {finding_uuid}: {e}")
         return render_error_page("Error loading finding", 500)
+
+
+@findings_bp.route('/triage/<finding_uuid>/reasoning-log')
+@login_required
+def reasoning_log(finding_uuid):
+    """Return the stored reasoning log for an authenticated user."""
+    if not DATABASE_AVAILABLE:
+        return jsonify({'error': 'Database not available'}), 503
+
+    try:
+        db_manager = get_database_manager()
+        finding = db_manager.get_finding_full(finding_uuid)
+
+        if not finding:
+            return jsonify({'error': 'Finding not found'}), 404
+
+        finding_data = finding.to_dict()
+        metadata = finding_data.get('metadata') or {}
+        reasoning_log = metadata.get('reasoning_log')
+        if not reasoning_log:
+            return jsonify({'error': 'Reasoning log not available'}), 404
+
+        return jsonify({'finding_uuid': finding_uuid, 'reasoning_log': reasoning_log})
+    except Exception as e:
+        logger.error(f"Error retrieving reasoning log for {finding_uuid}: {e}")
+        return jsonify({'error': 'Failed to load reasoning log'}), 500
 
 
 @findings_bp.route('/settings', methods=['GET', 'POST'])

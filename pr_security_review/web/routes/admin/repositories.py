@@ -1,13 +1,15 @@
 """
-Admin repository and document management routes.
+Admin repository management routes.
 """
 
-import os
 import logging
+import threading
 from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify
 from ...auth import get_auth_service
 from ...decorators import admin_required
 from ...services import RepositoryService
+from ....agent_files import discover_agent_files
+from ....review_scheduler import trigger_repository_bootstrap_review
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,37 @@ except ImportError as e:
     DATABASE_AVAILABLE = False
 
 
+def _parse_branch_configs_from_form() -> list[dict]:
+    branch_names = request.form.getlist('branch_name[]')
+    starting_commit_shas = request.form.getlist('starting_commit_sha[]')
+    hardfork_names = request.form.getlist('hardfork_name[]')
+
+    branch_configs = []
+    seen = set()
+    for index, branch_name in enumerate(branch_names):
+        normalized_branch = branch_name.strip()
+        if not normalized_branch or normalized_branch in seen:
+            continue
+
+        branch_configs.append({
+            'branch_name': normalized_branch,
+            'starting_commit_sha': (starting_commit_shas[index] if index < len(starting_commit_shas) else '').strip() or None,
+            'hardfork_name': (hardfork_names[index] if index < len(hardfork_names) else '').strip() or None,
+        })
+        seen.add(normalized_branch)
+
+    return branch_configs
+
+
+def _trigger_bootstrap_review(repo_name: str) -> None:
+    worker = threading.Thread(
+        target=trigger_repository_bootstrap_review,
+        args=(repo_name,),
+        daemon=True,
+    )
+    worker.start()
+
+
 @repositories_bp.route('/create', methods=['GET', 'POST'])
 @admin_required
 def create():
@@ -33,13 +66,17 @@ def create():
     auth_service = get_auth_service()
     
     if request.method == 'GET':
-        return render_template('admin/create_repository.html', 
-                             user=auth_service.get_current_user())
+        return render_template(
+            'admin/create_repository.html',
+            agent_files=discover_agent_files(),
+            user=auth_service.get_current_user()
+        )
     
     try:
         # Get form data
         url = request.form.get('url', '').strip()
-        branches_str = request.form.get('branches', '').strip()
+        branch_configs = _parse_branch_configs_from_form()
+        agent_file_path = request.form.get('agent_file_path', '').strip()
         telegram_channel_id = request.form.get('telegram_channel_id', '').strip()
         notify_default_channel = request.form.get('notify_default_channel') == 'on'
         
@@ -48,15 +85,16 @@ def create():
             flash('Repository URL is required', 'error')
             return redirect(url_for('admin_bp.repositories_bp.create'))
         
-        if not branches_str:
-            flash('At least one branch is required', 'error')
+        available_agent_files = discover_agent_files()
+        if not agent_file_path:
+            flash('An agent file selection is required', 'error')
             return redirect(url_for('admin_bp.repositories_bp.create'))
-        
-        # Parse branches
-        branches = [branch.strip() for branch in branches_str.split(',') if branch.strip()]
-        
-        if not branches:
-            flash('At least one valid branch is required', 'error')
+        if agent_file_path not in available_agent_files:
+            flash('Selected agent file is not available', 'error')
+            return redirect(url_for('admin_bp.repositories_bp.create'))
+
+        if not branch_configs:
+            flash('At least one valid branch configuration is required', 'error')
             return redirect(url_for('admin_bp.repositories_bp.create'))
         
         # Extract repository name from URL
@@ -69,7 +107,8 @@ def create():
         success = db_manager.create_repository(
             name=repo_name,
             url=url,
-            branches=branches,
+            branch_configs=branch_configs,
+            agent_file_path=agent_file_path,
             telegram_channel_id=telegram_channel_id if telegram_channel_id else None,
             notify_default_channel=notify_default_channel,
             created_by=current_user['email']
@@ -83,7 +122,9 @@ def create():
                 repository_data = {
                     'name': repo_name,
                     'url': url,
-                    'branches': branches,
+                    'branches': [config['branch_name'] for config in branch_configs],
+                    'branch_configs': branch_configs,
+                    'agent_file_path': agent_file_path,
                     'telegram_channel_id': telegram_channel_id,
                     'notify_default_channel': notify_default_channel,
                     'is_active': True
@@ -98,6 +139,7 @@ def create():
                 logger.error(f"Failed to send repository creation audit email: {email_error}")
             
             flash(f'Repository {repo_name} created successfully', 'success')
+            _trigger_bootstrap_review(repo_name)
             return redirect(url_for('admin_bp.dashboard_bp.admin_dashboard'))
         else:
             flash('Failed to create repository. Repository may already exist.', 'error')
@@ -127,35 +169,36 @@ def edit(repo_name):
             return redirect(url_for('admin_bp.dashboard_bp.admin_dashboard'))
         
         if request.method == 'GET':
-            agents = db_manager.get_all_agents()
-            return render_template('admin/edit_repository.html', 
-                                 repository=repository.to_dict(),
-                                 agents=agents,
-                                 user=auth_service.get_current_user())
+            return render_template(
+                'admin/edit_repository.html',
+                repository=repository.to_dict(),
+                agent_files=discover_agent_files(),
+                user=auth_service.get_current_user()
+            )
         
         # Handle POST request
         url = request.form.get('url', '').strip()
-        branches_str = request.form.get('branches', '').strip()
+        branch_configs = _parse_branch_configs_from_form()
+        agent_file_path = request.form.get('agent_file_path', '').strip()
         telegram_channel_id = request.form.get('telegram_channel_id', '').strip()
         notify_default_channel = request.form.get('notify_default_channel') == 'on'
         is_active = request.form.get('is_active') == 'on'
-        
-        agent_id_str = request.form.get('agent_id', '').strip()
-        agent_id = int(agent_id_str) if agent_id_str else None
         
         # Validate input
         if not url:
             flash('Repository URL is required', 'error')
             return redirect(url_for('admin_bp.repositories_bp.edit', repo_name=repo_name))
         
-        if not branches_str:
-            flash('At least one branch is required', 'error')
+        available_agent_files = discover_agent_files()
+        if not agent_file_path:
+            flash('An agent file selection is required', 'error')
             return redirect(url_for('admin_bp.repositories_bp.edit', repo_name=repo_name))
-        
-        branches = [branch.strip() for branch in branches_str.split(',') if branch.strip()]
-        
-        if not branches:
-            flash('At least one valid branch is required', 'error')
+        if agent_file_path not in available_agent_files:
+            flash('Selected agent file is not available', 'error')
+            return redirect(url_for('admin_bp.repositories_bp.edit', repo_name=repo_name))
+
+        if not branch_configs:
+            flash('At least one valid branch configuration is required', 'error')
             return redirect(url_for('admin_bp.repositories_bp.edit', repo_name=repo_name))
         
         old_repository_data = repository.to_dict()
@@ -164,21 +207,13 @@ def edit(repo_name):
         success = db_manager.update_repository(
             name=repo_name,
             url=url,
-            branches=branches,
+            branch_configs=branch_configs,
+            agent_file_path=agent_file_path,
             telegram_channel_id=telegram_channel_id if telegram_channel_id else None,
             notify_default_channel=notify_default_channel,
             is_active=is_active,
             updated_by=current_user['email']
         )
-        
-        if success:
-            agent_success = db_manager.update_repository_agent(
-                repo_name=repo_name,
-                agent_id=agent_id,
-                updated_by=current_user['email']
-            )
-            if not agent_success:
-                logger.warning(f"Failed to update agent for repository {repo_name}")
         
         if success:
             # Send audit email
@@ -188,7 +223,9 @@ def edit(repo_name):
                 new_repository_data = {
                     'name': repo_name,
                     'url': url,
-                    'branches': branches,
+                    'branches': [config['branch_name'] for config in branch_configs],
+                    'branch_configs': branch_configs,
+                    'agent_file_path': agent_file_path,
                     'telegram_channel_id': telegram_channel_id,
                     'notify_default_channel': notify_default_channel,
                     'is_active': is_active
@@ -204,6 +241,8 @@ def edit(repo_name):
                 logger.error(f"Failed to send repository modification audit email: {email_error}")
             
             flash(f'Repository {repo_name} updated successfully', 'success')
+            if not old_repository_data.get('is_active') and is_active:
+                _trigger_bootstrap_review(repo_name)
             return redirect(url_for('admin_bp.dashboard_bp.admin_dashboard'))
         else:
             flash('Failed to update repository', 'error')
@@ -282,6 +321,8 @@ def toggle_status(repo_name):
         
         if success:
             status_text = 'active' if new_status else 'inactive'
+            if new_status:
+                _trigger_bootstrap_review(repo_name)
             return jsonify({
                 'success': True, 
                 'message': f'Repository {repo_name} is now {status_text}',
@@ -310,129 +351,3 @@ def list_repositories():
     except Exception as e:
         logger.error(f"Error fetching repositories: {e}")
         return jsonify({'error': 'Failed to fetch repositories'}), 500
-
-
-# Document management routes
-@repositories_bp.route('/<path:repo_name>/documents')
-@admin_required
-def documents(repo_name):
-    """View and manage documents for a repository (admin only)."""
-    if not DATABASE_AVAILABLE:
-        flash('Database not available', 'error')
-        return redirect(url_for('admin_bp.dashboard_bp.admin_dashboard'))
-    
-    try:
-        auth_service = get_auth_service()
-        db_manager = get_database_manager()
-        
-        repository = db_manager.get_repository(repo_name)
-        if not repository:
-            flash('Repository not found', 'error')
-            return redirect(url_for('admin_bp.dashboard_bp.admin_dashboard'))
-        
-        documents = db_manager.get_repository_documents(repo_name)
-        
-        return render_template('admin/repository_documents.html',
-                             repository=repository.to_dict(),
-                             documents=documents,
-                             user=auth_service.get_current_user())
-        
-    except Exception as e:
-        logger.error(f"Error loading documents for repository {repo_name}: {e}")
-        flash('Error loading documents', 'error')
-        return redirect(url_for('admin_bp.dashboard_bp.admin_dashboard'))
-
-
-@repositories_bp.route('/<path:repo_name>/documents/upload', methods=['POST'])
-@admin_required
-def upload_document(repo_name):
-    """Upload a document for a repository (admin only)."""
-    if not DATABASE_AVAILABLE:
-        return jsonify({'error': 'Database not available'}), 503
-    
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-        
-        allowed_extensions = {'.pdf', '.txt', '.md', '.markdown'}
-        file_ext = os.path.splitext(file.filename)[1].lower()
-        if file_ext not in allowed_extensions:
-            return jsonify({'error': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'}), 400
-        
-        import tempfile
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-            file.save(temp_file.name)
-            temp_path = temp_file.name
-        
-        try:
-            from ....voyage_vector_store import get_voyage_vector_store
-            
-            voyage_store = get_voyage_vector_store()
-            if not voyage_store:
-                return jsonify({'error': 'Voyage AI not configured. Set VOYAGE_API_KEY environment variable.'}), 500
-            
-            content = voyage_store.read_file_content(temp_path)
-            embedding = voyage_store.generate_embedding(content)
-            file_size = os.path.getsize(temp_path)
-            
-            auth_service = get_auth_service()
-            db_manager = get_database_manager()
-            current_user = auth_service.get_current_user()
-            
-            success = db_manager.create_repository_document(
-                repository_name=repo_name,
-                filename=file.filename,
-                content=content,
-                file_type=file_ext.lstrip('.'),
-                file_size=file_size,
-                embedding=embedding,
-                created_by=current_user['email']
-            )
-            
-            if success:
-                return jsonify({'success': True, 'message': f'Document {file.filename} uploaded successfully'})
-            else:
-                return jsonify({'error': 'Failed to store document'}), 500
-            
-        finally:
-            try:
-                os.unlink(temp_path)
-            except Exception:
-                pass
-        
-    except Exception as e:
-        logger.error(f"Error uploading document for repository {repo_name}: {e}")
-        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
-
-
-@repositories_bp.route('/<path:repo_name>/documents/<int:doc_id>/delete', methods=['POST'])
-@admin_required
-def delete_document(repo_name, doc_id):
-    """Delete a document (admin only)."""
-    if not DATABASE_AVAILABLE:
-        return jsonify({'error': 'Database not available'}), 503
-    
-    try:
-        db_manager = get_database_manager()
-        
-        document = db_manager.get_repository_document(doc_id)
-        if not document:
-            return jsonify({'error': 'Document not found'}), 404
-        
-        if document.repository_name != repo_name:
-            return jsonify({'error': 'Document does not belong to this repository'}), 400
-        
-        success = db_manager.delete_repository_document(doc_id)
-        
-        if success:
-            return jsonify({'success': True, 'message': 'Document deleted successfully'})
-        else:
-            return jsonify({'error': 'Failed to delete document'}), 500
-        
-    except Exception as e:
-        logger.error(f"Error deleting document {doc_id}: {e}")
-        return jsonify({'error': 'Internal server error'}), 500

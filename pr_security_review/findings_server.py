@@ -889,86 +889,6 @@ def store_security_finding(repo_name: str, commit_info, analysis: Dict) -> str:
     </div>
 """
 
-    # Add multi-judge voting details if available
-    if 'multi_judge_details' in analysis and analysis['multi_judge_details'].get('enabled'):
-        details = analysis['multi_judge_details']
-        html_content += f"""
-    <div class="multi-judge">
-        <h3><i class="fas fa-robot"></i> Multi-Judge Analysis</h3>
-        <p>This analysis was performed using <strong>{len(details['providers'])} LLM judges</strong> with weighted voting.</p>
-        
-        <div class="judge-stats">
-            <div class="stat-card">
-                <div class="stat-value">{details['total_weight']:.1f}</div>
-                <div class="stat-label">Total Weight</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{details['vote_threshold']:.2f}</div>
-                <div class="stat-label">Required Threshold</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{details['weighted_score']:.2f}</div>
-                <div class="stat-label">Actual Vote Score</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">
-                    {'<i class="fas fa-exclamation-triangle" style="color: #fc8181;"></i>' if details['has_vulnerabilities'] else '<i class="fas fa-check-circle" style="color: #48bb78;"></i>'}
-                </div>
-                <div class="stat-label">
-                    {'Vulnerabilities Detected' if details['has_vulnerabilities'] else 'No Vulnerabilities'}
-                </div>
-            </div>
-        </div>
-        
-        <h4>Individual LLM Results</h4>
-        <table>
-            <thead>
-                <tr>
-                    <th>LLM Provider</th>
-                    <th>Weight</th>
-                    <th>Vote</th>
-                    <th>Confidence</th>
-                    <th>Issues Found</th>
-                    <th>Summary</th>
-                </tr>
-            </thead>
-            <tbody>
-"""
-        
-        for provider, result in details['individual_results'].items():
-            vote_icon = '<i class="fas fa-exclamation-triangle" style="color: #fc8181;"></i> YES' if result['has_vulnerabilities'] else '<i class="fas fa-check-circle" style="color: #48bb78;"></i> NO'
-            issues = f"{result['findings_count']} issue(s)" if result['findings_count'] > 0 else "None"
-            
-            # Add severity breakdown if issues found
-            if result['findings_count'] > 0 and result.get('findings_severity'):
-                severity_parts = []
-                for sev in ['HIGH', 'MEDIUM', 'LOW']:
-                    count = result['findings_severity'].get(sev, 0)
-                    if count > 0:
-                        severity_parts.append(f"{count} {sev}")
-                if severity_parts:
-                    issues += f"<br><small>({', '.join(severity_parts)})</small>"
-            
-            summary = result['summary'][:60] + '...' if len(result['summary']) > 60 else result['summary']
-            weight = details['weights'].get(provider, 0)
-            
-            html_content += f"""
-                <tr>
-                    <td><strong>{provider.capitalize()}</strong></td>
-                    <td>{weight}</td>
-                    <td>{vote_icon}</td>
-                    <td>{result['confidence_score']}%</td>
-                    <td>{issues}</td>
-                    <td>{summary}</td>
-                </tr>
-"""
-        
-        html_content += """
-            </tbody>
-        </table>
-    </div>
-"""
-    
     # Add summary section
     html_content += f"""
     <div class="main-card">
@@ -1109,4 +1029,20 @@ def store_security_finding(repo_name: str, commit_info, analysis: Dict) -> str:
         logger.info(f"Stored finding in memory with UUID: {finding_uuid}")
     
     # Return the URL for accessing the finding
+    return server.get_finding_url(finding_uuid)
+
+
+def get_finding_url(finding_uuid: str) -> str:
+    """
+    Return the public URL for an existing finding UUID.
+
+    Args:
+        finding_uuid: UUID of an already stored finding
+
+    Returns:
+        str: URL for accessing the finding
+    """
+    server = get_server()
+    if not server.running:
+        server.start()
     return server.get_finding_url(finding_uuid)

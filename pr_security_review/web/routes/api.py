@@ -3,10 +3,13 @@ API routes blueprint for AJAX endpoints.
 """
 
 import logging
+import os
 from flask import Blueprint, jsonify, request
 from ..auth import get_auth_service
 from ..decorators import login_required, admin_required
 from ..services import FindingsService
+from ...claude_review import SecurityReview, build_storage_metadata
+from ...review_types import CommitInfo
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,15 @@ try:
 except ImportError as e:
     logger.warning(f"Database not available: {e}")
     DATABASE_AVAILABLE = False
+
+
+def _create_reviewer(repo_name: str = None) -> SecurityReview:
+    """Create the Claude-only reviewer."""
+    provider_kwargs = {}
+    model = os.environ.get('CLAUDE_MODEL')
+    if model:
+        provider_kwargs['model'] = model
+    return SecurityReview(provider_kwargs=provider_kwargs, repo_name=repo_name)
 
 
 @api_bp.route('/findings')
@@ -306,44 +318,15 @@ def scan_commit():
         # Run the scan in a background thread to avoid blocking the request
         def run_scan():
             try:
-                # Import SecurityReview class
-                from ...__main__ import SecurityReview, CommitInfo
-                from ...config_loader import agent_config
-                
-                # Load repository-specific agent configuration if available
-                try:
-                    if agent_config.load_for_repository(repo_name):
-                        logger.info(f"Loaded repository-specific agent configuration for {repo_name}")
-                    else:
-                        logger.info(f"Using main agent configuration for {repo_name}")
-                except Exception as e:
-                    logger.warning(f"Failed to load repository-specific agent, using main agent: {e}")
-                
                 # Get GitHub token
                 github_token = os.getenv('GITHUB_TOKEN')
                 if not github_token:
                     logger.error("GITHUB_TOKEN not configured")
                     return
                 
-                # Initialize SecurityReview with configuration from environment
-                provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
-                provider_kwargs = {}
-                
-                # Get docs directory if configured
-                docs_dir = os.environ.get('DOCS_DIR')
-                voyage_key = os.environ.get('VOYAGE_API_KEY')
-                voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-large')
-                
                 logger.info(f"Starting scan for {repo_name}:{commit_sha[:7]}")
                 
-                # Initialize reviewer
-                reviewer = SecurityReview(
-                    provider_name,
-                    provider_kwargs,
-                    docs_dir=docs_dir,
-                    voyage_key=voyage_key,
-                    voyage_model=voyage_model
-                )
+                reviewer = _create_reviewer(repo_name=repo_name)
                 
                 # Analyze the commit
                 analysis, cost_info = reviewer.analyze_commit(repo_name, commit_sha)
@@ -399,7 +382,7 @@ def scan_commit():
                         repo_name=repo_name,
                         commit_info=commit_info,
                         analysis=analysis,
-                        metadata={'cost_info': str(cost_info) if cost_info else None}
+                        metadata=build_storage_metadata(cost_info)
                     )
                     
                     logger.info(f"Stored finding {finding_uuid} for {repo_name}:{commit_sha[:7]}")
@@ -452,44 +435,15 @@ def scan_commits_batch():
         # Run the batch scan in a background thread
         def run_batch_scan():
             try:
-                # Import SecurityReview class
-                from ...__main__ import SecurityReview, CommitInfo
-                from ...config_loader import agent_config
-                
-                # Load repository-specific agent configuration if available
-                try:
-                    if agent_config.load_for_repository(repo_name):
-                        logger.info(f"Loaded repository-specific agent configuration for {repo_name}")
-                    else:
-                        logger.info(f"Using main agent configuration for {repo_name}")
-                except Exception as e:
-                    logger.warning(f"Failed to load repository-specific agent, using main agent: {e}")
-                
                 # Get GitHub token
                 github_token = os.getenv('GITHUB_TOKEN')
                 if not github_token:
                     logger.error("GITHUB_TOKEN not configured")
                     return
                 
-                # Initialize SecurityReview with configuration from environment
-                provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
-                provider_kwargs = {}
-                
-                # Get docs directory if configured
-                docs_dir = os.environ.get('DOCS_DIR')
-                voyage_key = os.environ.get('VOYAGE_API_KEY')
-                voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-large')
-                
                 logger.info(f"Starting batch scan for {len(commit_shas)} commits in {repo_name}")
                 
-                # Initialize reviewer
-                reviewer = SecurityReview(
-                    provider_name,
-                    provider_kwargs,
-                    docs_dir=docs_dir,
-                    voyage_key=voyage_key,
-                    voyage_model=voyage_model
-                )
+                reviewer = _create_reviewer(repo_name=repo_name)
                 
                 # Get GitHub repo
                 github = Github(auth=Auth.Token(github_token))
@@ -550,7 +504,7 @@ def scan_commits_batch():
                 logger.info(f"Analyzing combined changes ({len(combined_changes)} characters) from {len(commit_infos)} commits...")
                 
                 # Analyze the combined changes as a single batch
-                analysis, cost_info = reviewer.analyze_security(combined_changes)
+                analysis, cost_info = reviewer.analyze_security(combined_changes, repo_name=repo_name)
                 
                 logger.info(f"Batch analysis complete for {len(commit_shas)} commits:")
                 logger.info(f"  - Vulnerabilities found: {analysis.get('has_vulnerabilities', False)}")
@@ -613,11 +567,10 @@ def scan_commits_batch():
                             repo_name=repo_name,
                             commit_info=batch_commit_info,
                             analysis=analysis,
-                            metadata={
-                                'cost_info': str(cost_info) if cost_info else None,
+                            metadata=build_storage_metadata(cost_info, {
                                 'batch_size': len(commit_shas),
                                 'commit_shas': ','.join(commit_shas)
-                            }
+                            })
                         )
                         
                         logger.info(f"Stored batch finding {finding_uuid} for {len(commit_shas)} commits in {repo_name}")
@@ -756,44 +709,15 @@ def scan_pr():
         # Run the scan in a background thread to avoid blocking the request
         def run_scan():
             try:
-                # Import SecurityReview class
-                from ...__main__ import SecurityReview, CommitInfo
-                from ...config_loader import agent_config
-                
-                # Load repository-specific agent configuration if available
-                try:
-                    if agent_config.load_for_repository(repo_name):
-                        logger.info(f"Loaded repository-specific agent configuration for {repo_name}")
-                    else:
-                        logger.info(f"Using main agent configuration for {repo_name}")
-                except Exception as e:
-                    logger.warning(f"Failed to load repository-specific agent, using main agent: {e}")
-                
                 # Get GitHub token
                 github_token = os.getenv('GITHUB_TOKEN')
                 if not github_token:
                     logger.error("GITHUB_TOKEN not configured")
                     return
                 
-                # Initialize SecurityReview with configuration from environment
-                provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
-                provider_kwargs = {}
-                
-                # Get docs directory if configured
-                docs_dir = os.environ.get('DOCS_DIR')
-                voyage_key = os.environ.get('VOYAGE_API_KEY')
-                voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-large')
-                
                 logger.info(f"Starting scan for {repo_name}:PR#{pr_number}")
                 
-                # Initialize reviewer
-                reviewer = SecurityReview(
-                    provider_name,
-                    provider_kwargs,
-                    docs_dir=docs_dir,
-                    voyage_key=voyage_key,
-                    voyage_model=voyage_model
-                )
+                reviewer = _create_reviewer(repo_name=repo_name)
                 
                 # Get PR information from GitHub
                 github = Github(auth=Auth.Token(github_token))
@@ -804,7 +728,7 @@ def scan_pr():
                 changes = reviewer.get_pr_changes(pr)
                 
                 # Analyze the PR changes
-                analysis, cost_info = reviewer.analyze_security(changes)
+                analysis, cost_info = reviewer.analyze_security(changes, repo_name=repo_name)
                 
                 # Get the head commit SHA for reference
                 head_sha = pr.head.sha
@@ -871,12 +795,11 @@ def scan_pr():
                         repo_name=repo_name,
                         commit_info=commit_info,
                         analysis=analysis,
-                        metadata={
-                            'cost_info': str(cost_info) if cost_info else None,
+                        metadata=build_storage_metadata(cost_info, {
                             'pr_number': pr_number,
                             'pr_title': pr.title,
                             'pr_state': pr_state
-                        }
+                        })
                     )
                     
                     # Update the finding with PR information

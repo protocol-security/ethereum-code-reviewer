@@ -24,6 +24,10 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.dialects.postgresql import UUID
 import logging
+from .findings_deduplication import (
+    DUPLICATE_FINDING_WINDOW_SECONDS,
+    find_duplicate_finding_uuids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +47,8 @@ class Repository(Base):
     url = Column(String(500), nullable=False)  # Full GitHub URL
     branches = Column(JSON, nullable=False)  # Array of branch names
     
-    # Agent assignment
-    agent_id = Column(Integer, nullable=True)  # ID of the agent to use for this repository (NULL = use main agent)
+    # Review configuration
+    agent_file_path = Column(String(500), nullable=True)  # Relative path to AGENT.md/AGENTS.md under ./agents
     
     # Telegram notification settings
     telegram_channel_id = Column(String(255))  # Optional telegram channel ID
@@ -62,12 +66,29 @@ class Repository(Base):
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model to dictionary."""
+        branch_configs = getattr(self, 'branch_configs_data', None)
+        if branch_configs is None:
+            branch_configs = [
+                {
+                    'branch_name': branch,
+                    'starting_commit_sha': None,
+                    'hardfork_name': None,
+                    'last_seen_head_sha': None,
+                    'last_reviewed_head_sha': None,
+                    'local_sync_status': 'pending',
+                    'last_sync_error': None,
+                    'last_synced_at': None,
+                }
+                for branch in (self.branches or [])
+            ]
+
         return {
             'id': self.id,
             'name': self.name,
             'url': self.url,
-            'branches': self.branches,
-            'agent_id': self.agent_id,
+            'branches': [config['branch_name'] for config in branch_configs],
+            'branch_configs': branch_configs,
+            'agent_file_path': self.agent_file_path,
             'telegram_channel_id': self.telegram_channel_id,
             'notify_default_channel': self.notify_default_channel,
             'is_active': self.is_active,
@@ -86,6 +107,43 @@ class Repository(Base):
         if len(parts) >= 2:
             return '/'.join(parts[-2:])
         return url
+
+
+class RepositoryBranchConfig(Base):
+    """Database model for branch-specific review configuration and runtime state."""
+
+    __tablename__ = 'repository_branch_configs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    repository_name = Column(String(255), nullable=False)
+    branch_name = Column(String(255), nullable=False)
+    starting_commit_sha = Column(String(64), nullable=True)
+    hardfork_name = Column(String(255), nullable=True)
+    last_seen_head_sha = Column(String(64), nullable=True)
+    last_reviewed_head_sha = Column(String(64), nullable=True)
+    local_sync_status = Column(String(50), nullable=False, default='pending')
+    last_sync_error = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    __table_args__ = (
+        Index('idx_repository_branch_configs_repo_name', 'repository_name'),
+        Index('idx_repository_branch_configs_repo_branch', 'repository_name', 'branch_name', unique=True),
+        Index('idx_repository_branch_configs_status', 'local_sync_status'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'branch_name': self.branch_name,
+            'starting_commit_sha': self.starting_commit_sha,
+            'hardfork_name': self.hardfork_name,
+            'last_seen_head_sha': self.last_seen_head_sha,
+            'last_reviewed_head_sha': self.last_reviewed_head_sha,
+            'local_sync_status': self.local_sync_status,
+            'last_sync_error': self.last_sync_error,
+            'last_synced_at': self.last_synced_at.isoformat() if self.last_synced_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class User(Base):
@@ -244,102 +302,6 @@ class FindingNote(Base):
         }
 
 
-class Agent(Base):
-    """Database model for AI agents with customizable prompts."""
-    
-    __tablename__ = 'agents'
-    
-    # Primary key
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    
-    # Agent information
-    name = Column(String(255), nullable=False)
-    is_main = Column(Boolean, default=False, nullable=False)  # Main agent (from agent.json)
-    
-    # Agent prompts (stored as JSON)
-    prompts = Column(JSON, nullable=False)
-    
-    # Metadata
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    created_by = Column(String(255), nullable=False)  # Email of user who created it
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    updated_by = Column(String(255), nullable=False)  # Email of user who last updated it
-    
-    # Indexing for performance
-    __table_args__ = (
-        Index('idx_agents_name', 'name'),
-        Index('idx_agents_is_main', 'is_main'),
-    )
-    
-    def __repr__(self):
-        return f"<Agent(id={self.id}, name={self.name}, is_main={self.is_main})>"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary."""
-        return {
-            'id': self.id,
-            'name': self.name,
-            'is_main': self.is_main,
-            'prompts': self.prompts,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'created_by': self.created_by,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'updated_by': self.updated_by,
-        }
-
-
-class RepositoryDocument(Base):
-    """Database model for repository-specific documentation with embeddings."""
-    
-    __tablename__ = 'repository_documents'
-    
-    # Primary key
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    
-    # Repository association
-    repository_name = Column(String(255), nullable=False)  # Repository name this document belongs to
-    
-    # Document information
-    filename = Column(String(500), nullable=False)  # Original filename
-    content = Column(Text, nullable=False)  # Document text content
-    file_type = Column(String(50), nullable=False)  # File extension (pdf, md, txt)
-    file_size = Column(Integer, nullable=False)  # File size in bytes
-    
-    # Embedding information
-    embedding = Column(JSON, nullable=False)  # Vector embedding as JSON array
-    embedding_model = Column(String(100), nullable=False, default='voyage-code-3')
-    
-    # Metadata
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    created_by = Column(String(255), nullable=False)  # Email of user who uploaded
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    
-    # Indexing for performance
-    __table_args__ = (
-        Index('idx_repo_docs_repo_name', 'repository_name'),
-        Index('idx_repo_docs_created_at', 'created_at'),
-    )
-    
-    def __repr__(self):
-        return f"<RepositoryDocument(id={self.id}, repo={self.repository_name}, filename={self.filename})>"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary."""
-        return {
-            'id': self.id,
-            'repository_name': self.repository_name,
-            'filename': self.filename,
-            'content': self.content,
-            'file_type': self.file_type,
-            'file_size': self.file_size,
-            'embedding': self.embedding,
-            'embedding_model': self.embedding_model,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'created_by': self.created_by,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
 class SecurityFinding(Base):
     """Database model for security findings."""
     
@@ -420,6 +382,9 @@ class SecurityFinding(Base):
             'author': self.author,
             'commit_date': self.commit_date.isoformat() if self.commit_date else None,
             'commit_message': self.commit_message,
+            'pr_number': self.pr_number,
+            'pr_title': self.pr_title,
+            'pr_state': self.pr_state,
             'html_content': self.html_content,
             'has_vulnerabilities': self.has_vulnerabilities,
             'confidence_score': self.confidence_score,
@@ -530,6 +495,15 @@ class DatabaseManager:
         try:
             # Set expiration to 100 years in the future (effectively never expires)
             expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=36500)  # 100 years
+            combined_metadata = dict(metadata or {})
+            if analysis.get('_reasoning_log') and 'reasoning_log' not in combined_metadata:
+                combined_metadata['reasoning_log'] = analysis['_reasoning_log']
+            commit_date = getattr(commit_info, 'date', None)
+            if isinstance(commit_date, str) and commit_date:
+                try:
+                    commit_date = datetime.datetime.fromisoformat(commit_date.replace('Z', '+00:00'))
+                except ValueError:
+                    commit_date = None
             
             # Create finding record
             finding = SecurityFinding(
@@ -538,7 +512,7 @@ class DatabaseManager:
                 commit_url=getattr(commit_info, 'url', None),
                 branch=getattr(commit_info, 'branch', None),
                 author=getattr(commit_info, 'author', None),
-                commit_date=getattr(commit_info, 'date', None),
+                commit_date=commit_date,
                 commit_message=getattr(commit_info, 'message', None),
                 html_content=html_content,
                 has_vulnerabilities=analysis.get('has_vulnerabilities', False),
@@ -546,7 +520,7 @@ class DatabaseManager:
                 summary=analysis.get('summary'),
                 findings_count=len(analysis.get('findings', [])),
                 analysis_data=analysis,
-                extra_metadata=metadata or {},
+                extra_metadata=combined_metadata,
                 expires_at=expires_at
             )
             
@@ -687,6 +661,64 @@ class DatabaseManager:
             session.rollback()
             logger.error(f"Failed to cleanup expired findings: {e}")
             return 0
+        finally:
+            session.close()
+
+    def cleanup_duplicate_findings(
+        self,
+        repo_name: Optional[str] = None,
+        dry_run: bool = False,
+        duplicate_window_seconds: int = DUPLICATE_FINDING_WINDOW_SECONDS
+    ) -> Dict[str, Any]:
+        """
+        Remove duplicate findings created by the same scan being stored twice.
+
+        Args:
+            repo_name: Optional repository filter
+            dry_run: When True, only report what would be deleted
+            duplicate_window_seconds: Max time gap between duplicate rows
+
+        Returns:
+            Summary of removed or matched duplicate rows
+        """
+        session = self.get_session()
+        try:
+            query = session.query(SecurityFinding).order_by(SecurityFinding.created_at.desc())
+
+            if repo_name:
+                query = query.filter(SecurityFinding.repo_name == repo_name)
+
+            findings = query.all()
+            duplicate_uuids = find_duplicate_finding_uuids(
+                findings,
+                duplicate_window_seconds=duplicate_window_seconds
+            )
+
+            summary = {
+                'scanned_count': len(findings),
+                'duplicate_count': len(duplicate_uuids),
+                'deleted_count': 0,
+                'dry_run': dry_run,
+                'repo_name': repo_name,
+                'duplicate_uuids': duplicate_uuids,
+            }
+
+            if not duplicate_uuids or dry_run:
+                return summary
+
+            deleted_count = session.query(SecurityFinding).filter(
+                SecurityFinding.uuid.in_(duplicate_uuids)
+            ).delete(synchronize_session=False)
+            session.commit()
+
+            summary['deleted_count'] = deleted_count
+            logger.info(f"Deleted {deleted_count} duplicate finding(s)")
+            return summary
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to cleanup duplicate findings: {e}")
+            raise
         finally:
             session.close()
     
@@ -1436,10 +1468,98 @@ class DatabaseManager:
             logger.error(f"Failed to filter findings by user access for {user_email}: {e}")
             return findings  # Return all findings on error
 
+    def _normalize_branch_configs(
+        self,
+        branch_configs: Optional[List[Dict[str, Any]]] = None,
+        branches: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Normalize legacy branch lists or structured branch configs."""
+        raw_configs = branch_configs
+        if raw_configs is None:
+            raw_configs = [{'branch_name': branch} for branch in (branches or [])]
+
+        normalized: List[Dict[str, Any]] = []
+        seen = set()
+        for config in raw_configs:
+            branch_name = (config.get('branch_name') or '').strip()
+            if not branch_name or branch_name in seen:
+                continue
+
+            starting_commit_sha = (config.get('starting_commit_sha') or '').strip() or None
+            hardfork_name = (config.get('hardfork_name') or '').strip() or None
+
+            normalized.append({
+                'branch_name': branch_name,
+                'starting_commit_sha': starting_commit_sha,
+                'hardfork_name': hardfork_name,
+                'last_seen_head_sha': config.get('last_seen_head_sha'),
+                'last_reviewed_head_sha': config.get('last_reviewed_head_sha'),
+                'local_sync_status': config.get('local_sync_status') or 'pending',
+                'last_sync_error': config.get('last_sync_error'),
+                'last_synced_at': config.get('last_synced_at'),
+            })
+            seen.add(branch_name)
+
+        return normalized
+
+    def _load_branch_configs(self, session: Session, repository_name: str) -> List[Dict[str, Any]]:
+        configs = session.query(RepositoryBranchConfig).filter(
+            RepositoryBranchConfig.repository_name == repository_name
+        ).order_by(RepositoryBranchConfig.branch_name).all()
+        return [config.to_dict() for config in configs]
+
+    def _attach_branch_configs(self, session: Session, repository: Optional[Repository]) -> Optional[Repository]:
+        if repository is None:
+            return None
+        repository.branch_configs_data = self._load_branch_configs(session, repository.name)
+        return repository
+
+    def _replace_branch_configs(
+        self,
+        session: Session,
+        repository_name: str,
+        branch_configs: List[Dict[str, Any]],
+        preserve_runtime_state: bool = True
+    ) -> None:
+        existing_configs = {
+            config.branch_name: config
+            for config in session.query(RepositoryBranchConfig).filter(
+                RepositoryBranchConfig.repository_name == repository_name
+            ).all()
+        }
+
+        session.query(RepositoryBranchConfig).filter(
+            RepositoryBranchConfig.repository_name == repository_name
+        ).delete()
+
+        for config in branch_configs:
+            existing = existing_configs.get(config['branch_name'])
+            preserve_state = (
+                preserve_runtime_state
+                and existing is not None
+                and existing.starting_commit_sha == config.get('starting_commit_sha')
+                and existing.hardfork_name == config.get('hardfork_name')
+            )
+
+            session.add(RepositoryBranchConfig(
+                repository_name=repository_name,
+                branch_name=config['branch_name'],
+                starting_commit_sha=config.get('starting_commit_sha'),
+                hardfork_name=config.get('hardfork_name'),
+                last_seen_head_sha=existing.last_seen_head_sha if preserve_state else config.get('last_seen_head_sha'),
+                last_reviewed_head_sha=existing.last_reviewed_head_sha if preserve_state else config.get('last_reviewed_head_sha'),
+                local_sync_status=existing.local_sync_status if preserve_state else (config.get('local_sync_status') or 'pending'),
+                last_sync_error=existing.last_sync_error if preserve_state else config.get('last_sync_error'),
+                last_synced_at=existing.last_synced_at if preserve_state else config.get('last_synced_at'),
+                updated_at=datetime.datetime.now(datetime.timezone.utc),
+            ))
+
     # Repository management methods
-    def create_repository(self, name: str, url: str, branches: List[str], 
-                         telegram_channel_id: Optional[str] = None, 
-                         notify_default_channel: bool = False, 
+    def create_repository(self, name: str, url: str, branches: Optional[List[str]] = None,
+                         branch_configs: Optional[List[Dict[str, Any]]] = None,
+                         agent_file_path: Optional[str] = None,
+                         telegram_channel_id: Optional[str] = None,
+                         notify_default_channel: bool = False,
                          created_by: str = 'system') -> bool:
         """
         Create a new repository configuration.
@@ -1447,7 +1567,9 @@ class DatabaseManager:
         Args:
             name: Repository name (e.g., "ethereum/go-ethereum")
             url: Full GitHub URL
-            branches: List of branch names to monitor
+            branches: Legacy list of branch names to monitor
+            branch_configs: Structured branch review configuration
+            agent_file_path: Relative path to AGENT.md/AGENTS.md
             telegram_channel_id: Optional Telegram channel ID
             notify_default_channel: Whether to notify default channel
             created_by: Email of admin who created it
@@ -1463,11 +1585,16 @@ class DatabaseManager:
                 logger.warning(f"Repository already exists: {name}")
                 return False
             
-            # Create new repository
+            normalized_branch_configs = self._normalize_branch_configs(branch_configs=branch_configs, branches=branches)
+            if not normalized_branch_configs:
+                logger.warning(f"Repository {name} requires at least one branch configuration")
+                return False
+
             repository = Repository(
                 name=name,
                 url=url,
-                branches=branches,
+                branches=[config['branch_name'] for config in normalized_branch_configs],
+                agent_file_path=agent_file_path,
                 telegram_channel_id=telegram_channel_id,
                 notify_default_channel=notify_default_channel,
                 created_by=created_by,
@@ -1475,6 +1602,8 @@ class DatabaseManager:
             )
             
             session.add(repository)
+            session.flush()
+            self._replace_branch_configs(session, name, normalized_branch_configs, preserve_runtime_state=False)
             session.commit()
             
             logger.info(f"Created repository: {name} by {created_by}")
@@ -1500,10 +1629,22 @@ class DatabaseManager:
         session = self.get_session()
         try:
             repository = session.query(Repository).filter(Repository.name == name).first()
-            return repository
+            return self._attach_branch_configs(session, repository)
             
         except Exception as e:
             logger.error(f"Failed to retrieve repository {name}: {e}")
+            return None
+        finally:
+            session.close()
+
+    def get_repository_by_id(self, repository_id: int) -> Optional[Repository]:
+        """Get a repository by numeric database ID."""
+        session = self.get_session()
+        try:
+            repository = session.query(Repository).filter(Repository.id == repository_id).first()
+            return self._attach_branch_configs(session, repository)
+        except Exception as e:
+            logger.error(f"Failed to retrieve repository {repository_id}: {e}")
             return None
         finally:
             session.close()
@@ -1525,7 +1666,7 @@ class DatabaseManager:
                 query = query.filter(Repository.is_active == True)
             
             repositories = query.order_by(Repository.name).all()
-            return [repo.to_dict() for repo in repositories]
+            return [self._attach_branch_configs(session, repo).to_dict() for repo in repositories]
             
         except Exception as e:
             logger.error(f"Failed to retrieve all repositories: {e}")
@@ -1533,8 +1674,10 @@ class DatabaseManager:
         finally:
             session.close()
 
-    def update_repository(self, name: str, url: Optional[str] = None, 
+    def update_repository(self, name: str, url: Optional[str] = None,
                          branches: Optional[List[str]] = None,
+                         branch_configs: Optional[List[Dict[str, Any]]] = None,
+                         agent_file_path: Optional[str] = None,
                          telegram_channel_id: Optional[str] = None,
                          notify_default_channel: Optional[bool] = None,
                          is_active: Optional[bool] = None,
@@ -1545,7 +1688,9 @@ class DatabaseManager:
         Args:
             name: Repository name
             url: Updated URL
-            branches: Updated branches list
+            branches: Legacy updated branches list
+            branch_configs: Updated structured branch configs
+            agent_file_path: Updated agent file path
             telegram_channel_id: Updated Telegram channel ID
             notify_default_channel: Updated notification setting
             is_active: Updated active status
@@ -1564,8 +1709,15 @@ class DatabaseManager:
             # Update fields if provided
             if url is not None:
                 repository.url = url
-            if branches is not None:
-                repository.branches = branches
+            normalized_branch_configs = None
+            if branch_configs is not None or branches is not None:
+                normalized_branch_configs = self._normalize_branch_configs(branch_configs=branch_configs, branches=branches)
+                if not normalized_branch_configs:
+                    logger.warning(f"Repository {name} update requires at least one branch configuration")
+                    return False
+                repository.branches = [config['branch_name'] for config in normalized_branch_configs]
+            if agent_file_path is not None:
+                repository.agent_file_path = agent_file_path
             if telegram_channel_id is not None:
                 repository.telegram_channel_id = telegram_channel_id
             if notify_default_channel is not None:
@@ -1575,6 +1727,9 @@ class DatabaseManager:
             
             repository.updated_by = updated_by
             repository.updated_at = datetime.datetime.now(datetime.timezone.utc)
+
+            if normalized_branch_configs is not None:
+                self._replace_branch_configs(session, name, normalized_branch_configs)
             
             session.commit()
             logger.info(f"Updated repository: {name} by {updated_by}")
@@ -1631,9 +1786,13 @@ class DatabaseManager:
             
             result = []
             for repo in repositories:
+                branch_configs = self._load_branch_configs(session, repo.name)
                 repo_config = {
+                    'name': repo.name,
                     'url': repo.url,
-                    'branches': repo.branches,
+                    'branches': [config['branch_name'] for config in branch_configs],
+                    'branch_configs': branch_configs,
+                    'agent_file_path': repo.agent_file_path,
                 }
                 
                 # Add telegram settings if available
@@ -1648,6 +1807,60 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"Failed to get repositories for monitoring: {e}")
+            return []
+        finally:
+            session.close()
+
+    def update_repository_branch_runtime_state(
+        self,
+        repository_name: str,
+        branch_name: str,
+        *,
+        last_seen_head_sha: Optional[str] = None,
+        last_reviewed_head_sha: Optional[str] = None,
+        local_sync_status: Optional[str] = None,
+        last_sync_error: Optional[str] = None,
+        last_synced_at: Optional[datetime.datetime] = None
+    ) -> bool:
+        """Update runtime sync/review state for a monitored branch."""
+        session = self.get_session()
+        try:
+            branch_config = session.query(RepositoryBranchConfig).filter(
+                RepositoryBranchConfig.repository_name == repository_name,
+                RepositoryBranchConfig.branch_name == branch_name
+            ).first()
+            if not branch_config:
+                logger.warning(f"Repository branch config not found for {repository_name}:{branch_name}")
+                return False
+
+            if last_seen_head_sha is not None:
+                branch_config.last_seen_head_sha = last_seen_head_sha
+            if last_reviewed_head_sha is not None:
+                branch_config.last_reviewed_head_sha = last_reviewed_head_sha
+            if local_sync_status is not None:
+                branch_config.local_sync_status = local_sync_status
+            if last_sync_error is not None or local_sync_status in {'ready', 'reviewed', 'syncing'}:
+                branch_config.last_sync_error = last_sync_error
+            if last_synced_at is not None:
+                branch_config.last_synced_at = last_synced_at
+            branch_config.updated_at = datetime.datetime.now(datetime.timezone.utc)
+
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to update runtime state for {repository_name}:{branch_name}: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_repository_branch_configs(self, repository_name: str) -> List[Dict[str, Any]]:
+        """Return structured branch configs for a repository."""
+        session = self.get_session()
+        try:
+            return self._load_branch_configs(session, repository_name)
+        except Exception as e:
+            logger.error(f"Failed to load branch configs for {repository_name}: {e}")
             return []
         finally:
             session.close()
@@ -1693,6 +1906,7 @@ class DatabaseManager:
                     name=name,
                     url=url,
                     branches=branches,
+                    agent_file_path=repo_config.get('agent_file_path'),
                     telegram_channel_id=telegram_channel_id,
                     notify_default_channel=notify_default_channel,
                     created_by=created_by
@@ -1711,465 +1925,6 @@ class DatabaseManager:
             logger.error(f"Failed to migrate repositories from config: {e}")
             return False
 
-    # Repository document management methods
-    def create_repository_document(
-        self,
-        repository_name: str,
-        filename: str,
-        content: str,
-        file_type: str,
-        file_size: int,
-        embedding: List[float],
-        created_by: str,
-        embedding_model: str = 'voyage-code-3'
-    ) -> bool:
-        """
-        Create a new repository document with embedding.
-        
-        Args:
-            repository_name: Name of the repository
-            filename: Original filename
-            content: Document text content
-            file_type: File extension (pdf, md, txt)
-            file_size: File size in bytes
-            embedding: Vector embedding as list of floats
-            created_by: Email of user who uploaded
-            embedding_model: Model used for embedding
-            
-        Returns:
-            bool: True if document was created successfully, False otherwise
-        """
-        session = self.get_session()
-        try:
-            document = RepositoryDocument(
-                repository_name=repository_name,
-                filename=filename,
-                content=content,
-                file_type=file_type,
-                file_size=file_size,
-                embedding=embedding,
-                embedding_model=embedding_model,
-                created_by=created_by
-            )
-            
-            session.add(document)
-            session.commit()
-            
-            logger.info(f"Created document {filename} for repository {repository_name}")
-            return True
-            
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to create document {filename}: {e}")
-            return False
-        finally:
-            session.close()
-
-    def get_repository_documents(self, repository_name: str) -> List[Dict[str, Any]]:
-        """
-        Get all documents for a repository.
-        
-        Args:
-            repository_name: Name of the repository
-            
-        Returns:
-            List of document dictionaries
-        """
-        session = self.get_session()
-        try:
-            documents = session.query(RepositoryDocument).filter(
-                RepositoryDocument.repository_name == repository_name
-            ).order_by(RepositoryDocument.created_at.desc()).all()
-            
-            return [doc.to_dict() for doc in documents]
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve documents for repository {repository_name}: {e}")
-            return []
-        finally:
-            session.close()
-
-    def get_repository_document(self, document_id: int) -> Optional[RepositoryDocument]:
-        """
-        Get a specific document by ID.
-        
-        Args:
-            document_id: ID of the document
-            
-        Returns:
-            RepositoryDocument object or None if not found
-        """
-        session = self.get_session()
-        try:
-            document = session.query(RepositoryDocument).filter(
-                RepositoryDocument.id == document_id
-            ).first()
-            
-            return document
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve document {document_id}: {e}")
-            return None
-        finally:
-            session.close()
-
-    def delete_repository_document(self, document_id: int) -> bool:
-        """
-        Delete a repository document.
-        
-        Args:
-            document_id: ID of the document to delete
-            
-        Returns:
-            bool: True if document was deleted successfully, False otherwise
-        """
-        session = self.get_session()
-        try:
-            document = session.query(RepositoryDocument).filter(
-                RepositoryDocument.id == document_id
-            ).first()
-            
-            if not document:
-                logger.warning(f"Document not found for deletion: {document_id}")
-                return False
-            
-            session.delete(document)
-            session.commit()
-            
-            logger.info(f"Deleted document {document_id} ({document.filename})")
-            return True
-            
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to delete document {document_id}: {e}")
-            return False
-        finally:
-            session.close()
-
-    def get_document_count_by_repository(self, repository_name: str) -> int:
-        """
-        Get count of documents for a repository.
-        
-        Args:
-            repository_name: Name of the repository
-            
-        Returns:
-            int: Number of documents
-        """
-        session = self.get_session()
-        try:
-            count = session.query(RepositoryDocument).filter(
-                RepositoryDocument.repository_name == repository_name
-            ).count()
-            
-            return count
-            
-        except Exception as e:
-            logger.error(f"Failed to get document count for repository {repository_name}: {e}")
-            return 0
-        finally:
-            session.close()
-    
-    # Agent management methods
-    def create_agent(self, name: str, prompts: Dict, created_by: str, is_main: bool = False) -> Optional[int]:
-        """
-        Create a new agent.
-        
-        Args:
-            name: Agent name
-            prompts: Agent prompts as dictionary
-            created_by: Email of user who created it
-            is_main: Whether this is the main agent
-            
-        Returns:
-            int: Agent ID if successful, None otherwise
-        """
-        session = self.get_session()
-        try:
-            # If this is being set as main, unset any existing main agent
-            if is_main:
-                existing_main = session.query(Agent).filter(Agent.is_main == True).first()
-                if existing_main:
-                    existing_main.is_main = False
-            
-            agent = Agent(
-                name=name,
-                is_main=is_main,
-                prompts=prompts,
-                created_by=created_by,
-                updated_by=created_by
-            )
-            
-            session.add(agent)
-            session.commit()
-            
-            logger.info(f"Created agent: {name} (id={agent.id}, main={is_main}) by {created_by}")
-            return agent.id
-            
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to create agent {name}: {e}")
-            return None
-        finally:
-            session.close()
-    
-    def get_agent(self, agent_id: int) -> Optional[Agent]:
-        """
-        Get an agent by ID.
-        
-        Args:
-            agent_id: Agent ID
-            
-        Returns:
-            Agent object or None if not found
-        """
-        session = self.get_session()
-        try:
-            agent = session.query(Agent).filter(Agent.id == agent_id).first()
-            return agent
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve agent {agent_id}: {e}")
-            return None
-        finally:
-            session.close()
-    
-    def get_all_agents(self) -> List[Dict[str, Any]]:
-        """
-        Get all agents.
-        
-        Returns:
-            List of agent dictionaries
-        """
-        session = self.get_session()
-        try:
-            agents = session.query(Agent).order_by(Agent.is_main.desc(), Agent.name).all()
-            return [agent.to_dict() for agent in agents]
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve all agents: {e}")
-            return []
-        finally:
-            session.close()
-    
-    def get_main_agent(self) -> Optional[Agent]:
-        """
-        Get the main agent.
-        
-        Returns:
-            Agent object or None if not found
-        """
-        session = self.get_session()
-        try:
-            agent = session.query(Agent).filter(Agent.is_main == True).first()
-            return agent
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve main agent: {e}")
-            return None
-        finally:
-            session.close()
-    
-    def update_agent(self, agent_id: int, name: Optional[str] = None, prompts: Optional[Dict] = None, 
-                    updated_by: str = 'system') -> bool:
-        """
-        Update an agent.
-        
-        Args:
-            agent_id: Agent ID
-            name: Updated name
-            prompts: Updated prompts
-            updated_by: Email of user who updated it
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        session = self.get_session()
-        try:
-            agent = session.query(Agent).filter(Agent.id == agent_id).first()
-            if not agent:
-                logger.warning(f"Agent not found for update: {agent_id}")
-                return False
-            
-            # Update fields if provided
-            if name is not None:
-                agent.name = name
-            if prompts is not None:
-                agent.prompts = prompts
-            
-            agent.updated_by = updated_by
-            agent.updated_at = datetime.datetime.now(datetime.timezone.utc)
-            
-            session.commit()
-            logger.info(f"Updated agent {agent_id} by {updated_by}")
-            return True
-            
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to update agent {agent_id}: {e}")
-            return False
-        finally:
-            session.close()
-    
-    def delete_agent(self, agent_id: int) -> bool:
-        """
-        Delete an agent.
-        
-        Args:
-            agent_id: Agent ID
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        session = self.get_session()
-        try:
-            agent = session.query(Agent).filter(Agent.id == agent_id).first()
-            if not agent:
-                logger.warning(f"Agent not found for deletion: {agent_id}")
-                return False
-            
-            # Prevent deletion of main agent
-            if agent.is_main:
-                logger.warning(f"Cannot delete main agent: {agent_id}")
-                return False
-            
-            # Update any repositories using this agent to use NULL (main agent)
-            repositories = session.query(Repository).filter(Repository.agent_id == agent_id).all()
-            for repo in repositories:
-                repo.agent_id = None
-            
-            session.delete(agent)
-            session.commit()
-            
-            logger.info(f"Deleted agent {agent_id}")
-            return True
-            
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to delete agent {agent_id}: {e}")
-            return False
-        finally:
-            session.close()
-    
-    def import_agent_from_file(self, agent_file_path: str, created_by: str = 'system') -> Optional[int]:
-        """
-        Import the main agent from agent.json file.
-        
-        Args:
-            agent_file_path: Path to agent.json file
-            created_by: Email of user performing import
-            
-        Returns:
-            int: Agent ID if successful, None otherwise
-        """
-        try:
-            with open(agent_file_path, 'r') as f:
-                agent_data = json.load(f)
-            
-            prompts = agent_data.get('prompts', {})
-            
-            # Check if main agent already exists
-            existing_main = self.get_main_agent()
-            if existing_main:
-                # Update existing main agent
-                success = self.update_agent(
-                    agent_id=existing_main.id,
-                    prompts=prompts,
-                    updated_by=created_by
-                )
-                if success:
-                    logger.info(f"Updated main agent from {agent_file_path}")
-                    return existing_main.id
-                else:
-                    logger.error(f"Failed to update main agent from {agent_file_path}")
-                    return None
-            else:
-                # Create new main agent
-                agent_id = self.create_agent(
-                    name="Main Agent",
-                    prompts=prompts,
-                    created_by=created_by,
-                    is_main=True
-                )
-                if agent_id:
-                    logger.info(f"Imported main agent from {agent_file_path}")
-                else:
-                    logger.error(f"Failed to import main agent from {agent_file_path}")
-                return agent_id
-                
-        except Exception as e:
-            logger.error(f"Failed to import agent from {agent_file_path}: {e}")
-            return None
-    
-    def update_repository_agent(self, repo_name: str, agent_id: Optional[int], updated_by: str = 'system') -> bool:
-        """
-        Update the agent assigned to a repository.
-        
-        Args:
-            repo_name: Repository name
-            agent_id: Agent ID (None for main agent)
-            updated_by: Email of user who updated it
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        session = self.get_session()
-        try:
-            repository = session.query(Repository).filter(Repository.name == repo_name).first()
-            if not repository:
-                logger.warning(f"Repository not found for agent update: {repo_name}")
-                return False
-            
-            repository.agent_id = agent_id
-            repository.updated_by = updated_by
-            repository.updated_at = datetime.datetime.now(datetime.timezone.utc)
-            
-            session.commit()
-            logger.info(f"Updated agent for repository {repo_name} to agent_id={agent_id} by {updated_by}")
-            return True
-            
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to update repository agent for {repo_name}: {e}")
-            return False
-        finally:
-            session.close()
-    
-    def get_repository_agent(self, repo_name: str) -> Optional[Dict[str, Any]]:
-        """
-        Get the agent for a specific repository.
-        
-        Args:
-            repo_name: Repository name
-            
-        Returns:
-            Agent dictionary or None if not found
-        """
-        session = self.get_session()
-        try:
-            repository = session.query(Repository).filter(Repository.name == repo_name).first()
-            if not repository:
-                logger.warning(f"Repository not found: {repo_name}")
-                return None
-            
-            if repository.agent_id:
-                agent = session.query(Agent).filter(Agent.id == repository.agent_id).first()
-                if agent:
-                    return agent.to_dict()
-            
-            # Return main agent if no specific agent assigned
-            main_agent = session.query(Agent).filter(Agent.is_main == True).first()
-            if main_agent:
-                return main_agent.to_dict()
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get agent for repository {repo_name}: {e}")
-            return None
-        finally:
-            session.close()
-    
     # API key management methods
     def create_api_key(self, user_email: str, name: str) -> Optional[str]:
         """
@@ -2393,17 +2148,6 @@ def get_database_manager() -> DatabaseManager:
             migrate_database_schema(_db_manager)
         except Exception as e:
             logger.warning(f"Database migration failed during initialization: {e}")
-        
-        # Import main agent from agent.json if not already imported
-        try:
-            agent_file_path = os.path.join(os.path.dirname(__file__), '..', 'agent.json')
-            if os.path.exists(agent_file_path):
-                _db_manager.import_agent_from_file(agent_file_path, created_by='system')
-                logger.info("Main agent imported/updated from agent.json")
-            else:
-                logger.warning(f"agent.json not found at {agent_file_path}")
-        except Exception as e:
-            logger.warning(f"Failed to import main agent from agent.json: {e}")
     return _db_manager
 
 
@@ -2670,6 +2414,7 @@ def migrate_database_schema(db_manager: DatabaseManager):
             name VARCHAR(255) UNIQUE NOT NULL,
             url VARCHAR(500) NOT NULL,
             branches JSON NOT NULL,
+            agent_file_path VARCHAR(500),
             telegram_channel_id VARCHAR(255),
             notify_default_channel BOOLEAN NOT NULL DEFAULT FALSE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -2690,64 +2435,46 @@ def migrate_database_schema(db_manager: DatabaseManager):
         CREATE INDEX IF NOT EXISTS idx_repositories_is_active ON repositories(is_active);
         """,
         
-        # Create repository_documents table
-        """
-        CREATE TABLE IF NOT EXISTS repository_documents (
-            id SERIAL PRIMARY KEY,
-            repository_name VARCHAR(255) NOT NULL,
-            filename VARCHAR(500) NOT NULL,
-            content TEXT NOT NULL,
-            file_type VARCHAR(50) NOT NULL,
-            file_size INTEGER NOT NULL,
-            embedding JSON NOT NULL,
-            embedding_model VARCHAR(100) NOT NULL DEFAULT 'voyage-code-3',
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            created_by VARCHAR(255) NOT NULL,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-        );
-        """,
-        
-        # Create index on repository_name for performance
-        """
-        CREATE INDEX IF NOT EXISTS idx_repo_docs_repo_name ON repository_documents(repository_name);
-        """,
-        
-        # Create index on created_at for performance
-        """
-        CREATE INDEX IF NOT EXISTS idx_repo_docs_created_at ON repository_documents(created_at);
-        """,
-        
-        # Create agents table
-        """
-        CREATE TABLE IF NOT EXISTS agents (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            is_main BOOLEAN NOT NULL DEFAULT FALSE,
-            prompts JSON NOT NULL,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            created_by VARCHAR(255) NOT NULL,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_by VARCHAR(255) NOT NULL
-        );
-        """,
-        
-        # Create indexes on agents table
-        """
-        CREATE INDEX IF NOT EXISTS idx_agents_name ON agents(name);
-        """,
-        
-        """
-        CREATE INDEX IF NOT EXISTS idx_agents_is_main ON agents(is_main);
-        """,
-        
-        # Add agent_id column to repositories table
+        # Add agent_file_path column to repositories table
         """
         DO $$
         BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'repositories' AND column_name = 'agent_id') THEN
-                ALTER TABLE repositories ADD COLUMN agent_id INTEGER;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'repositories' AND column_name = 'agent_file_path') THEN
+                ALTER TABLE repositories ADD COLUMN agent_file_path VARCHAR(500);
             END IF;
         END$$;
+        """,
+
+        # Create repository branch config table
+        """
+        CREATE TABLE IF NOT EXISTS repository_branch_configs (
+            id SERIAL PRIMARY KEY,
+            repository_name VARCHAR(255) NOT NULL,
+            branch_name VARCHAR(255) NOT NULL,
+            starting_commit_sha VARCHAR(64),
+            hardfork_name VARCHAR(255),
+            last_seen_head_sha VARCHAR(64),
+            last_reviewed_head_sha VARCHAR(64),
+            local_sync_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            last_sync_error TEXT,
+            last_synced_at TIMESTAMP WITH TIME ZONE,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+        """,
+
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_branch_configs_repo_branch
+        ON repository_branch_configs(repository_name, branch_name);
+        """,
+
+        """
+        CREATE INDEX IF NOT EXISTS idx_repository_branch_configs_repo_name
+        ON repository_branch_configs(repository_name);
+        """,
+
+        """
+        CREATE INDEX IF NOT EXISTS idx_repository_branch_configs_status
+        ON repository_branch_configs(local_sync_status);
         """,
         
         # Create api_keys table
@@ -2784,6 +2511,26 @@ def migrate_database_schema(db_manager: DatabaseManager):
     try:
         for command in migration_commands:
             session.execute(text(command))
+        session.commit()
+
+        # Backfill branch configs from the legacy repositories.branches JSON field.
+        repositories_without_configs = session.query(Repository).all()
+        for repository in repositories_without_configs:
+            existing_count = session.query(RepositoryBranchConfig).filter(
+                RepositoryBranchConfig.repository_name == repository.name
+            ).count()
+            if existing_count > 0:
+                continue
+
+            for branch_name in repository.branches or []:
+                if not branch_name:
+                    continue
+                session.add(RepositoryBranchConfig(
+                    repository_name=repository.name,
+                    branch_name=branch_name,
+                    local_sync_status='pending',
+                    updated_at=datetime.datetime.now(datetime.timezone.utc),
+                ))
         session.commit()
         logger.info("Database schema migration completed successfully")
         return True

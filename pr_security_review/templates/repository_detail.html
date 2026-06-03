@@ -67,6 +67,75 @@
         font-size: 0.75rem;
         font-weight: 500;
     }
+
+    .repo-config-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        margin-bottom: 2rem;
+    }
+
+    .repo-config-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+        padding: 1.5rem 2rem 2rem;
+    }
+
+    .config-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 1rem;
+    }
+
+    .config-card h3 {
+        font-size: 0.95rem;
+        color: #2d3748;
+        margin-bottom: 0.75rem;
+    }
+
+    .config-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        font-size: 0.8125rem;
+        color: #4a5568;
+    }
+
+    .config-meta code {
+        font-size: 0.76rem;
+    }
+
+    .sync-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.2rem 0.65rem;
+        border-radius: 9999px;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+
+    .sync-status-pill.reviewed {
+        background: #c6f6d5;
+        color: #276749;
+    }
+
+    .sync-status-pill.ready {
+        background: #bee3f8;
+        color: #2b6cb0;
+    }
+
+    .sync-status-pill.sync_error,
+    .sync-status-pill.review_error {
+        background: #fed7d7;
+        color: #c53030;
+    }
     
     .commits-section {
         background: white;
@@ -455,10 +524,47 @@
             <a href="{{ url_for('admin_bp.repositories_bp.edit', repo_name=repository.name) }}" class="btn-admin btn-edit">
                 <i class="fas fa-edit"></i> Edit Repository
             </a>
-            <a href="{{ url_for('admin_bp.repositories_bp.documents', repo_name=repository.name) }}" class="btn-admin btn-knowledge">
-                <i class="fas fa-book"></i> Knowledgebase
-            </a>
         </div>
+    </div>
+</div>
+
+<div class="repo-config-card">
+    <div class="section-header">
+        <h2>
+            <i class="fas fa-sliders-h"></i>
+            Review Configuration
+        </h2>
+    </div>
+    <div class="repo-config-grid">
+        <div class="config-card">
+            <h3>Agent</h3>
+            <div class="config-meta">
+                <div>Agent file: <code>{{ repository.agent_file_path or 'not configured' }}</code></div>
+                <div>Repository status: {{ 'active' if repository.is_active else 'inactive' }}</div>
+            </div>
+        </div>
+        {% for branch in repository.branch_configs or [] %}
+            <div class="config-card">
+                <h3>
+                    <i class="fas fa-code-branch"></i>
+                    {{ branch.branch_name }}
+                </h3>
+                <div class="config-meta">
+                    <div>
+                        <span class="sync-status-pill {{ branch.local_sync_status or 'pending' }}">
+                            {{ branch.local_sync_status or 'pending' }}
+                        </span>
+                    </div>
+                    <div>Baseline: {% if branch.starting_commit_sha %}<code>{{ branch.starting_commit_sha }}</code>{% else %}latest commit only{% endif %}</div>
+                    <div>Hardfork: {{ branch.hardfork_name or 'not set' }}</div>
+                    <div>Latest seen HEAD: {% if branch.last_seen_head_sha %}<code>{{ branch.last_seen_head_sha }}</code>{% else %}none{% endif %}</div>
+                    <div>Latest reviewed HEAD: {% if branch.last_reviewed_head_sha %}<code>{{ branch.last_reviewed_head_sha }}</code>{% else %}none{% endif %}</div>
+                    {% if branch.last_sync_error %}
+                        <div style="color: #c53030;">Error: {{ branch.last_sync_error }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
     </div>
 </div>
 

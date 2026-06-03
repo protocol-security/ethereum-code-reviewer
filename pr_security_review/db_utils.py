@@ -80,6 +80,37 @@ def cleanup_expired():
         print(f"❌ Failed to cleanup expired findings: {e}")
         return False
 
+
+def cleanup_duplicates(repo_name: Optional[str] = None, dry_run: bool = False, window_seconds: int = 300):
+    """Clean up duplicate findings created by the same scan event."""
+    try:
+        from .database import get_database_manager
+        db_manager = get_database_manager()
+        result = db_manager.cleanup_duplicate_findings(
+            repo_name=repo_name,
+            dry_run=dry_run,
+            duplicate_window_seconds=window_seconds
+        )
+
+        action_word = "Would remove" if dry_run else "Removed"
+        scope = f" for {repo_name}" if repo_name else ""
+
+        print(f"✅ {action_word} {result['duplicate_count']} duplicate finding(s){scope}")
+        print(f"Scanned {result['scanned_count']} finding(s) using a {window_seconds}-second duplicate window")
+
+        if result['duplicate_uuids']:
+            preview = result['duplicate_uuids'][:10]
+            print("Duplicate UUIDs:")
+            for finding_uuid in preview:
+                print(f"  - {finding_uuid}")
+            if len(result['duplicate_uuids']) > len(preview):
+                print(f"  ... and {len(result['duplicate_uuids']) - len(preview)} more")
+
+        return True
+    except Exception as e:
+        print(f"❌ Failed to cleanup duplicate findings: {e}")
+        return False
+
 def list_findings(repo_name: Optional[str] = None, limit: int = 10):
     """List recent findings."""
     try:
@@ -145,6 +176,12 @@ def main():
     
     # Cleanup expired
     subparsers.add_parser('cleanup', help='Clean up expired findings')
+
+    # Cleanup duplicates
+    dedupe_parser = subparsers.add_parser('dedupe', help='Clean up duplicate findings')
+    dedupe_parser.add_argument('--repo', help='Filter by repository name')
+    dedupe_parser.add_argument('--dry-run', action='store_true', help='Show duplicates without deleting them')
+    dedupe_parser.add_argument('--window-seconds', type=int, default=300, help='Time window used to treat nearby rows as duplicates')
     
     # List findings
     list_parser = subparsers.add_parser('list', help='List recent findings')
@@ -186,6 +223,10 @@ def main():
             
         elif args.command == 'cleanup':
             success = cleanup_expired()
+            sys.exit(0 if success else 1)
+
+        elif args.command == 'dedupe':
+            success = cleanup_duplicates(args.repo, args.dry_run, args.window_seconds)
             sys.exit(0 if success else 1)
             
         elif args.command == 'list':

@@ -5,6 +5,10 @@ Business logic services for the web application.
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
+from ..findings_deduplication import (
+    DUPLICATE_FINDING_WINDOW_SECONDS,
+    deduplicate_finding_dicts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +23,8 @@ except ImportError as e:
 
 class FindingsService:
     """Service for handling findings-related business logic."""
+
+    DUPLICATE_WINDOW_SECONDS = DUPLICATE_FINDING_WINDOW_SECONDS
     
     @staticmethod
     def get_all_findings(triage_status: Optional[str] = None, user_email: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -55,6 +61,9 @@ class FindingsService:
                         'author': finding.author,
                         'commit_date': finding.commit_date.isoformat() if finding.commit_date else None,
                         'commit_message': finding.commit_message,
+                        'pr_number': finding.pr_number,
+                        'pr_title': finding.pr_title,
+                        'pr_state': finding.pr_state,
                         'has_vulnerabilities': finding.has_vulnerabilities,
                         'confidence_score': finding.confidence_score,
                         'summary': finding.summary,
@@ -76,8 +85,11 @@ class FindingsService:
             # Apply repository access filtering if user_email provided
             if user_email:
                 findings = db_manager.filter_findings_by_user_access(findings, user_email)
-            
-            return findings
+
+            return deduplicate_finding_dicts(
+                findings,
+                duplicate_window_seconds=FindingsService.DUPLICATE_WINDOW_SECONDS
+            )
             
         except Exception as e:
             logger.error(f"Error fetching findings: {e}")
@@ -169,6 +181,8 @@ class RepositoryService:
                     'name': repo['name'],
                     'url': repo['url'],
                     'branches': repo['branches'],
+                    'branch_configs': repo.get('branch_configs', []),
+                    'agent_file_path': repo.get('agent_file_path'),
                     'telegram_channel_id': repo.get('telegram_channel_id'),
                     'notify_default_channel': repo.get('notify_default_channel', False),
                     'is_active': repo.get('is_active', True),

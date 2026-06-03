@@ -48,12 +48,8 @@ def start_monitoring_service():
     from ..commit_monitor import CommitMonitor
     from ..telegram_notifier import TelegramNotifier
     from ..__main__ import SecurityReview, run_commit_monitor_callback
-    from ..config_loader import load_agent_config
     
     try:
-        # Load agent configuration
-        load_agent_config()
-        
         # Get configuration from environment
         github_token = os.environ.get('GITHUB_TOKEN')
         if not github_token:
@@ -66,31 +62,10 @@ def start_monitoring_service():
         # Initialize commit monitor (will load repositories from database)
         monitor = CommitMonitor(github_token)
         
-        # Initialize security reviewer
-        provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
         provider_kwargs = {}
-        
-        if provider_name == 'anthropic':
-            if model := os.environ.get('CLAUDE_MODEL'):
-                provider_kwargs['model'] = model
-        elif provider_name == 'openai':
-            if model := os.environ.get('GPT_MODEL'):
-                provider_kwargs['model'] = model
-        
-        docs_dir = os.path.abspath(os.environ.get('DOCS_DIR')) if os.environ.get('DOCS_DIR') else None
-        
-        # Check for multi-judge mode
-        multi_judge = os.environ.get('MULTI_JUDGE', '').lower() in ('true', 'yes', '1')
-        
-        reviewer = SecurityReview(
-            provider_name,
-            provider_kwargs,
-            docs_dir=docs_dir,
-            voyage_key=os.environ.get('VOYAGE_API_KEY'),
-            voyage_model=os.environ.get('VOYAGE_MODEL'),
-            multi_judge=multi_judge,
-            gemini_key=os.environ.get('GEMINI_API_KEY')
-        )
+        if model := os.environ.get('CLAUDE_MODEL'):
+            provider_kwargs['model'] = model
+        reviewer = SecurityReview(provider_kwargs=provider_kwargs)
         
         # Initialize Telegram notifier if configured
         telegram_notifier = None
@@ -115,13 +90,14 @@ def start_monitoring_service():
             logger.info("ℹ️ Telegram notifications not configured")
         
         # Define monitoring callback
-        def monitoring_callback(monitored_repo, commits):
+        def monitoring_callback(monitored_repo, review_targets):
             run_commit_monitor_callback(
                 reviewer, 
                 monitored_repo, 
-                commits, 
+                review_targets, 
                 telegram_notifier, 
-                notify_clean_commits=notify_clean_commits
+                notify_clean_commits=notify_clean_commits,
+                monitor=monitor,
             )
         
         # Define monitoring loop
@@ -134,8 +110,8 @@ def start_monitoring_service():
                     new_commits = monitor.get_new_commits()
                     
                     if new_commits:
-                        for monitored_repo, commits in new_commits:
-                            monitoring_callback(monitored_repo, commits)
+                        for monitored_repo, review_targets in new_commits:
+                            monitoring_callback(monitored_repo, review_targets)
                     else:
                         logger.info("No new commits found.")
                     

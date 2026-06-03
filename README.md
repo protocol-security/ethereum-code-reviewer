@@ -1,428 +1,323 @@
-# ECR 
+# ECR
+
+Ethereum Code Reviewer is a Claude Code SDK based security reviewer for Ethereum pull requests, commits, files, and monitored branches.
+
+The current implementation is intentionally Claude-only. The old multi-provider and vector database paths have been removed; review prompts now come from local `AGENT.md` / `AGENTS.md` files, and relevant specification context is selected directly from the `vectordb-docs` Markdown submodule.
 
 ## Capabilities
 
-### Supports many LLM providers
-Anthropic, DeepSeek, Gemini, Llama, OpenAI
+- Review GitHub pull requests, recent pull requests, individual files, individual commits, and direct stdin input.
+- Run as a GitHub App webhook server for automatic and `/security-review` triggered PR review.
+- Monitor configured repository branches continuously.
+- Review either the latest branch commit or a cumulative diff from a configured starting commit to branch head.
+- Scope monitored reviews to a hardfork such as `cancun`, `prague`, `electra`, or `fulu`.
+- Use repository-specific agent prompt files from `./agents`.
+- Include local Ethereum specification and vulnerability context from `./vectordb-docs/docs`.
+- Store findings in PostgreSQL, show them in the web app, and deduplicate repeated finding rows.
+- Send Telegram and email notifications.
+- Listen for review jobs from an AMQP/RabbitMQ queue.
 
-### Github Action
-You can run as a GitHub Action to have it as part of your CI/CD workflow.
-https://github.com/marketplace/actions/ethereum-security-reviewer
+## Requirements
 
-Create a workflow in your repository, e.g., `.github/workflows/security-review.yml`, use the [security-review.yml.example](security-review.yml.example) file as an example.
+- Python 3.8 or higher.
+- A GitHub token with read access to reviewed repositories.
+- An Anthropic API key.
+- The `claude-code-sdk` Python package and the `@anthropic-ai/claude-code` CLI available in the runtime environment.
+- PostgreSQL for the web app, repository configuration, finding storage, and duplicate cleanup.
 
-Add your API key(s) and other environmental variables to your repository secrets:
-  - Go to your repository settings
-  - Go to Secrets and Variables > Actions
-  - Create a new Repository Secret, with the Name ANTHROPIC_API_KEY and the Secret your Anthropic API key.
-  - Create a PR to see it in action. Example output: https://github.com/fredrik0x/go-ethereum/pull/2
-
-### Quick Demo
-To view how the tool performs in standalone mode, you can build a docker image.
-
-Create a GitHub Personal Access Token (Classic) with read:repo_hook checked: https://github.com/settings/tokens
-
-Create an Anthropic API key: https://console.anthropic.com/settings/keys
-
-```bash
-docker build -t ethereum-code-reviewer:latest .
-docker run --rm ethereum-code-reviewer:latest https://github.com/bluealloy/revm/pull/2085 --llm-provider anthropic --anthropic-api-key <anthropic-api-key> --github-token <github-pat-classic>
-```
-
-Output should look similar to:
-```bash
-Analyzing PR #2085
-Repository: bluealloy/revm
-Initial analysis found 3 potential vulnerabilities. Performing verification...
-
-🛡️ Security Review Report
-Vulnerabilities Detected: Yes
-
-Summary:
-After verification: 3 confirmed vulnerabilities out of 3 initially found.
-
-Cost Information: $0.108381 (25052 input + 2215 output tokens, claude-sonnet-4-5-20250929)
-
-Detailed Findings:
-
-HIGH Severity Issue
-Description: G1_MSM_BASE_GAS_FEE has been changed from 12000 to 1200, which is a 10x reduction in gas cost for G1 multi-scalar multiplication operations
-Recommendation: Revert G1_MSM_BASE_GAS_FEE to 12000 to match EIP-2537 specification
-Confidence: 95%
-
-HIGH Severity Issue
-Description: MAP_FP2_TO_G2_BASE_GAS_FEE is set to 0x23800 (145408) instead of the expected 23800, representing a ~6x increase in gas cost
-Recommendation: Change MAP_FP2_TO_G2_BASE_GAS_FEE from 0x23800 to 23800 to match EIP-2537 specification
-Confidence: 90%
-
-MEDIUM Severity Issue
-Description: G2_MSM uses incorrect constants - G2_ADD_ADDRESS, G2_ADD_BASE_GAS_FEE, and G2_ADD_INPUT_LENGTH instead of G2_MSM specific constants
-Recommendation: Use correct G2_MSM constants instead of G2_ADD constants in g2_msm.rs
-Confidence: 85%
-::warning::Security vulnerabilities detected with 95% confidence
-```
-
-### Dependencies
-Python 3.8 or higher
+## Install
 
 ```bash
+git submodule update --init --remote --recursive
 pip install -e .
 ```
 
-### Environment Setup
+The `vectordb-docs` submodule is configured to track its `master` branch. Use `--remote` during setup or deployment when you want the newest docs instead of the commit pinned by this repository.
 
-The tool uses flags or environment variables for API keys and configuration. The system prompts are adjusted as environment variables.
-
-1. Using a `.env` file:
-   ```bash
-   # Copy the example env file
-   cp .env.example .env
-   
-   # Edit .env with your API keys
-   GITHUB_TOKEN=your_github_token_here
-   ANTHROPIC_API_KEY=your_anthropic_key_here
-   OPENAI_API_KEY=your_openai_key_here
-   VOYAGE_API_KEY=your_voyage_key_here  # Required for Anthropic with docs
-   ...
-   ```
-
-2. Setting environment variables directly:
-   ```bash
-   export GITHUB_TOKEN=your_github_token_here
-   export ANTHROPIC_API_KEY=your_anthropic_key_here
-   export OPENAI_API_KEY=your_openai_key_here
-   export VOYAGE_API_KEY=your_voyage_key_here
-   ...
-   ```
-
-The tool will automatically load variables from `.env` if present, falling back to system environment variables or flags.
-
-
-### Multi-judging
-If more than one provider is enabled, weighted multi-judging is enabled with voting between providers.
-The multi-judge mode:
-  - Runs analysis with all available LLMs in parallel
-  - Uses weighted voting to determine if vulnerabilities exist
-  - If vulnerabilities are detected by consensus, uses Anthropic to synthesize a unified report
-  - Provides higher confidence through cross-validation between models
-  - Is automatically enabled when using multiple providers (one must be Anthropic)
-
-You can set the weight of each provider by using these variables:
-ANTHROPIC_WEIGHT, OPENAI_WEIGHT, GEMINI_WEIGHT, DEEPSEEK_WEIGHT, LLAMA_WEIGHT
-
-### Using Historical Vulnerability or Specification Context
-
-The tool supports using historical vulnerability documentation to improve its analysis through RAG. The embedding providers are:
-
-- OpenAI: Uses text-embedding-3-small model, automatically used with OpenAI's GPT.
-- Voyage AI: Required when using Anthropic's Claude with documentation.
-
-1. Create a directory for your vulnerability documentation:
-```bash
-mkdir docs
-```
-
-2. Add your documentation files (supports .md files):
-```
-docs/
-  ├── vuln1.md
-  ├── vuln2.md
-  └── vuln3.md
-```
-
-3. Use the documentation in the analysis:
-```bash
-# Using Anthropic (requires Voyage AI key)
-python -m pr_security_review https://github.com/org/repo/pull/1 \
-  --llm-provider anthropic \
-  --docs-dir ./docs \
-  --voyage-api-key your_voyage_api_key
-
-# Using OpenAI (automatically uses OpenAI embeddings)
-python -m pr_security_review https://github.com/org/repo/pull/1 \
-  --llm-provider openai \
-  --docs-dir ./docs
-```
-
-This will then:
-1. Generate embeddings for your documentation (cached for reuse)
-2. Find relevant context for each PR analysis using vector similarity
-3. Include this context in the security review
-
-
-
-### CLI
-
-One-Shot examples using Anthropic
-
-<a href="images/cli.png">
-  <img src="images/cli.png" width="200"/>
-</a>
-
-#### Single PR Review
+Install the Claude Code CLI separately if it is not already available:
 
 ```bash
-# Using environment variables
-export GITHUB_TOKEN=your_github_personal_access_token
+npm install -g @anthropic-ai/claude-code
+```
+
+## Environment
+
+The tool loads `.env` automatically when present.
+
+```bash
+cp .env.example .env
+```
+
+Minimum CLI configuration:
+
+```bash
+export GITHUB_TOKEN=your_github_token
 export ANTHROPIC_API_KEY=your_anthropic_key
-python -m pr_security_review https://github.com/org/repo/pull/1
-
-# Optionally post results as a PR comment
-python -m pr_security_review https://github.com/org/repo/pull/1 --post-comment
-
-# With vulnerability documentation (requires Voyage AI)
-export VOYAGE_API_KEY=your_voyage_key
-python -m pr_security_review https://github.com/org/repo/pull/1 \
-  --docs-dir ./docs
-
-# Or using command line arguments
-python -m pr_security_review https://github.com/org/repo/pull/1 \
-  --github-token your_github_token \
-  --llm-provider anthropic \
-  --anthropic-api-key your_anthropic_key \
-  --model claude-sonnet-4-5-20250929 \  # optional
-  --docs-dir ./docs \   # optional
-  --voyage-api-key your_voyage_key        # required if using docs-dir
 ```
 
-#### Analyzing Recent PRs
-
-You can also analyze the last X PRs from a repository to get a broader security overview:
+Optional model override:
 
 ```bash
-# Analyze the last 10 PRs from a repository (default)
-python -m pr_security_review --recent-prs owner/repo
+export CLAUDE_MODEL=<claude-model-name>
+```
 
-# Analyze the last 5 PRs from a repository
-python -m pr_security_review --recent-prs owner/repo --pr-count 5
+If no model is configured, the current code defaults to `claude-3-5-sonnet-20241022`.
 
-# With specific LLM provider and API key
+Web app, repository configuration, and persisted findings require:
+
+```bash
+export DATABASE_URL=postgresql://username:password@localhost:5432/security_findings
+export GOOGLE_CLIENT_ID=your_google_client_id
+export FLASK_SECRET_KEY=your_flask_secret
+export AUTHORIZED_EMAILS=admin@example.com
+```
+
+## Agent Files
+
+Each review uses a local agent prompt file under `./agents`. The repository includes:
+
+- `agents/execution-layer/AGENTS.md`
+- `agents/consensus-layer/AGENTS.md`
+
+For ad hoc CLI reviews, pass the agent explicitly:
+
+```bash
+python -m pr_security_review https://github.com/owner/repo/pull/1 \
+  --agent-file agents/execution-layer/AGENTS.md
+```
+
+For configured repositories, the selected agent file is stored on the repository record through the admin web UI or database configuration. If no `--agent-file` is passed, the reviewer resolves the agent from that repository configuration.
+
+## Specification Context
+
+The reviewer no longer creates embeddings or uses Voyage/OpenAI embedding APIs. Instead, it reads Markdown files from the `vectordb-docs` submodule and selects a bounded set of relevant documents for each review.
+
+Agent path controls the default docs scope:
+
+- `agents/execution-layer/AGENTS.md` maps to `vectordb-docs/docs/execution`.
+- `agents/consensus-layer/AGENTS.md` maps to `vectordb-docs/docs/consensus`.
+- Other agent paths fall back to `vectordb-docs/docs`.
+
+When a branch has a `hardfork_name`, matching hardfork `eips` and `specs` folders are preferred, with vulnerability docs included as additional context.
+
+## CLI
+
+### Single PR
+
+```bash
+python -m pr_security_review https://github.com/org/repo/pull/1 \
+  --agent-file agents/execution-layer/AGENTS.md
+```
+
+Post a comment only when vulnerabilities are found:
+
+```bash
+python -m pr_security_review https://github.com/org/repo/pull/1 \
+  --agent-file agents/execution-layer/AGENTS.md \
+  --post-comment
+```
+
+### Recent PRs
+
+```bash
 python -m pr_security_review --recent-prs owner/repo \
-  --pr-count 15 \
-  --llm-provider openai \
-  --openai-api-key YOUR_KEY \
-  --github-token YOUR_GITHUB_TOKEN
+  --pr-count 10 \
+  --agent-file agents/execution-layer/AGENTS.md
 ```
 
-This feature is particularly useful for:
-- Security audits of recent changes
-- Identifying patterns in security issues across PRs
-- Bulk analysis of repositories
-- Getting a security overview before releases
-
-The tool will:
-1. Fetch the last X PRs from the repository (both open and closed)
-2. Analyze each PR with code changes for security vulnerabilities
-3. Provide a summary report showing which PRs have security issues
-4. Display total cost information for the batch analysis
-
-#### Single File Analysis
-
-You can analyze individual files:
+### Single File
 
 ```bash
-# Analyze a specific file
-python -m pr_security_review --file https://github.com/org/repo/blob/main/src/auth.py
+python -m pr_security_review --file https://github.com/org/repo/blob/main/src/file.rs \
+  --agent-file agents/execution-layer/AGENTS.md
 ```
 
-#### Single Commit Analysis
-
-You can also analyze individual commits:
+### Single Commit
 
 ```bash
-# Analyze a specific commit
-python -m pr_security_review --repository NethermindEth/Nethermind --analyze-commit <SHA>
+python -m pr_security_review --repository owner/repo --analyze-commit <sha> \
+  --agent-file agents/execution-layer/AGENTS.md
 ```
 
-#### Monitor
-
-You can use the commit monitoring feature that track repositories for new commits and automatically analyze them for security vulnerabilities.
-
-##### Add repositories manually
+### Direct Text Input
 
 ```bash
-# Add a repository to monitor (e.g., Nethermind's master branch)
-python -m pr_security_review --monitor-add https://github.com/NethermindEth/nethermind --monitor-branches master
-
-# Check for new commits once
-python -m pr_security_review --monitor-check
-
-# Start continuous monitoring (checks every 5 minutes by default)
-python -m pr_security_review --monitor-continuous
+cat diff.txt | python -m pr_security_review --input-text \
+  --agent-file agents/execution-layer/AGENTS.md
 ```
 
-#### Common Commands
+## Branch Monitoring
+
+Monitoring uses local bare clones and branch worktrees. By default, data is stored under `/var/lib/reviewer/data`; override it with `REVIEWER_DATA_DIR`.
+
+Add a repository with legacy branch-only CLI configuration:
 
 ```bash
-# List all monitored repositories
+python -m pr_security_review --monitor-add https://github.com/NethermindEth/nethermind \
+  --monitor-branches master
+```
+
+List monitored repositories:
+
+```bash
 python -m pr_security_review --monitor-list
-
-# Remove a repository from monitoring
-python -m pr_security_review --monitor-remove https://github.com/NethermindEth/nethermind
-
-# Analyze a specific commit
-python -m pr_security_review --analyze-commit abc123 --repository owner/repo
-
-# Continuous monitoring with custom interval (in seconds)
-python -m pr_security_review --monitor-continuous --monitor-interval 600
 ```
 
-### Message Queue
-You can use a supported AMQP queue (such as rabbitmq) to receive incoming review requests, and to submit results. Use the AMQP_URL, QUEUE_NAME and RESPONSE_QUEUE_NAME to set this up.
+Check once:
 
+```bash
+python -m pr_security_review --monitor-check
+```
 
-### GitHub Application
-You can also run the tool as a GitHub App, which allows for command-based triggering of security reviews on PRs.
-Example: https://github.com/fredrik0x/go-ethereum/pull/1
+Run continuously:
 
-<a href="images/github.png">
-  <img src="images/github.png" width="200"/>
-</a>
+```bash
+python -m pr_security_review --monitor-continuous --monitor-interval 300
+```
 
+For branch-specific review settings, use the admin web UI or a JSON config file:
 
-1. Create a new GitHub App:
-   - Go to your GitHub Settings > Developer settings > GitHub Apps
-   - Click "New GitHub App"
-   - Fill in the required information:
-     - Name: Choose a name for your app
-     - Homepage URL: Your repository URL
-     - Webhook URL: The URL where your app will be running
-     - Webhook secret: Generate a secure random string
+```json
+{
+  "repositories": [
+    {
+      "url": "https://github.com/ethereum/go-ethereum",
+      "agent_file_path": "agents/execution-layer/AGENTS.md",
+      "branch_configs": [
+        {
+          "branch_name": "master",
+          "starting_commit_sha": "abc123",
+          "hardfork_name": "prague"
+        }
+      ],
+      "telegram_channel_id": "-1001234567890",
+      "notify_default_channel": true
+    }
+  ]
+}
+```
 
-2. Set Repository Permissions:
-   - Pull requests: Read & write (for reading PR changes and posting comments)
-   - Repository contents: Read (for accessing code)
-   - Repository collaborators: Read (for checking user permissions)
+Use it with:
 
-3. Subscribe to Events:
-   - Pull request (for automatic analysis of new PRs)
-   - Issue comment (for command-based triggering)
+```bash
+python -m pr_security_review --config-file ./monitoring.json --monitor-check
+```
 
-4. After creating the app:
-   - Note down the App ID
-   - Generate and download a private key
-   - Install the app on your repositories
+If `starting_commit_sha` is set, the review covers the cumulative diff from that commit to branch head. If it is omitted, only the latest commit is reviewed.
 
-5. Run the app as a webhook server (or use Dockerfile.github):
+## GitHub App
+
+The GitHub App mode runs a webhook server for automatic PR review and `/security-review` comment triggers.
+
 ```bash
 python -m pr_security_review \
   --github-app \
   --github-app-id YOUR_APP_ID \
   --github-private-key-path path/to/private-key.pem \
   --github-webhook-secret YOUR_WEBHOOK_SECRET \
-  --llm-provider openai \  # or anthropic
-  --openai-api-key YOUR_OPENAI_KEY \  # or --anthropic-api-key for Anthropic
-  --docs-dir ./docs \  # optional
-  --voyage-api-key YOUR_VOYAGE_KEY  # required if using Anthropic with docs
+  --anthropic-api-key YOUR_ANTHROPIC_KEY \
+  --model <claude-model-name>
 ```
 
-The app will now:
-- Automatically analyze new PRs and PR updates
-- Allow repository admins/maintainers to trigger analysis by commenting `/security-review` on any PR
+Required app permissions:
 
+- Pull requests: read and write.
+- Repository contents: read.
+- Repository collaborators: read.
 
+Subscribed events:
 
-### Web Application
-<a href="images/web1.png">
-  <img src="images/web1.png" width="200"/>
-</a>
+- Pull request.
+- Issue comment.
 
-<a href="images/web2.png">
-  <img src="images/web2.png" width="200"/>
-</a>
+## Web App
 
+The Dockerfile runs the web app with Gunicorn:
 
-<a href="images/web3.png">
-  <img src="images/web3.png" width="200"/>
-</a>
-
-
-To run the application in web server mode, you must at a minimum set the following flags or environment variables:
 ```bash
-GITHUB_TOKEN=
-ANTHROPIC_API_KEY=
-GOOGLE_CLIENT_ID=
-FLASK_SECRET_KEY=
-AUTHORIZED_EMAILS=the.google.email.address.you.want.to.be.admin
-WEB_APP_PORT=
-BASE_URL=
+docker build -t ethereum-code-reviewer:latest .
+docker run --rm -p 5000:5000 --env-file .env ethereum-code-reviewer:latest
 ```
 
-#### Email Notifications
+The admin UI supports repository creation and editing with:
 
-You can receive an email whenever a new finding is found by setting the AWS SES environmental variables.
+- GitHub repository URL.
+- Branch configurations.
+- Optional starting commit per branch.
+- Optional hardfork name per branch.
+- Required agent file selection.
+- Optional repository-specific Telegram channel.
 
-#### Telegram Notifications
+Creating a repository through the admin UI starts a background bootstrap review for the configured branches when `GITHUB_TOKEN` is available.
 
-<a href="images/telegram.png">
-  <img src="images/telegram.png" width="200"/>
-</a>
+## Queue Listener
 
-You can receive telegram notifications when a review has found a potential vulnerability (or all reviews)
+Use an AMQP queue for asynchronous review requests:
 
 ```bash
-# Configure Telegram notifications in the .env file with findings web server
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
-FINDINGS_SERVER_URL=https://your-server-url.com  # Optional: defaults to localhost if not set
-FINDINGS_SERVER_PORT=8000  # Optional: defaults to 8000
-NOTIFY_CLEAN_COMMITS=true  # Optional: notify for clean commits with no vulnerabilities
+python -m pr_security_review \
+  --listen-queue \
+  --amqp-url amqp://guest:guest@localhost:5672/ \
+  --queue-name security_review_requests \
+  --response-queue-name security_review_responses
+```
 
-# Start monitoring with Telegram notifications
+If `AMQP_URL` is set and no other mode is selected, queue listener mode is auto-detected.
+
+## Notifications
+
+Telegram notifications:
+
+```bash
+export TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+export TELEGRAM_CHAT_ID=your_telegram_chat_id
+export NOTIFY_CLEAN_COMMITS=false
 python -m pr_security_review --monitor-continuous
 ```
 
-This will:
-1. Start a findings server that hosts detailed vulnerability reports
-2. Send concise summaries to Telegram with links to detailed reports
-3. Each link contains comprehensive information about the vulnerability, including:
-   - Detailed explanations of the issue
-   - Impact analysis
-   - Fix recommendations with code examples
-   - Additional resources when available
-4. Enable Telegram bot commands:
-   - `/lastcommits` - Shows the latest commits for each monitored repository
-   - `/listrepos` - Lists all repositories currently being monitored
-5. Optionally sends notifications for clean commits (commits with no security vulnerabilities)
+When Telegram is configured for monitoring, the findings web app is started so notification links can point to stored finding details. Repository-specific Telegram channel settings can be configured per repository.
 
-The `/lastcommits` command provides a quick overview of the most recent commit in each branch of monitored repositories, including:
-- Repository name and branch
-- Commit hash with link to GitHub
-- Author name
-- Commit date and time
-- Commit message snippet
-
-The `/listrepos` command shows a simple list of all repositories being monitored, including:
-- Repository name
-- Monitored branches
-
-When the `--notify-clean-commits` flag is enabled (or `NOTIFY_CLEAN_COMMITS=true` environment variable is set), you'll also receive notifications for commits that have been analyzed and found to have no security vulnerabilities. These "clean commit" notifications include:
-- Repository name and branch
-- Commit hash with link to GitHub
-- Author name 
-- Commit message
-
-
-### Database Management
-
-You can use this database utility to managing your security findings:
+Email notifications use Amazon SES:
 
 ```bash
-# Check database connection
+export AWS_SES_REGION=us-east-1
+export SES_FROM_EMAIL=security-findings@example.com
+export BASE_URL=https://your-domain.example
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+```
+
+## Database Management
+
+Initialize and inspect the PostgreSQL database:
+
+```bash
+python -m pr_security_review.db_utils init
 python -m pr_security_review.db_utils check
-
-# View database statistics
 python -m pr_security_review.db_utils stats
+```
 
-# Clean up expired findings
-python -m pr_security_review.db_utils cleanup
+List and inspect findings:
 
-# List recent findings for a repository
-python -m pr_security_review.db_utils list --repo ethereum/go-ethereum
-
-# View details of a specific finding
+```bash
+python -m pr_security_review.db_utils list --repo ethereum/go-ethereum --limit 20
 python -m pr_security_review.db_utils details <uuid>
 ```
+
+Clean up expired findings:
+
+```bash
+python -m pr_security_review.db_utils cleanup
+```
+
+Remove duplicate findings created by repeated persistence of the same scan:
+
+```bash
+python -m pr_security_review.db_utils dedupe --dry-run
+python -m pr_security_review.db_utils dedupe --repo ethereum/go-ethereum
+```
+
+Duplicate cleanup keeps the newest matching row and treats rows as duplicates only when they share the same repository, PR number, commit SHA, vulnerability flag, summary, finding count, and are within the configured time window.
 
 ## License
 

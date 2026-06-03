@@ -272,7 +272,14 @@ class TelegramNotifier:
         
         return html_text
             
-    def format_security_finding(self, repo_name: str, commit_info: CommitInfo, analysis: Dict, cost_info=None) -> Dict:
+    def format_security_finding(
+        self,
+        repo_name: str,
+        commit_info: CommitInfo,
+        analysis: Dict,
+        cost_info=None,
+        finding_url: Optional[str] = None
+    ) -> Dict:
         """
         Format a security finding for Telegram using findings server for detailed content.
         
@@ -281,6 +288,7 @@ class TelegramNotifier:
             commit_info: Commit information
             analysis: Security analysis results
             cost_info: Optional cost information for the analysis
+            finding_url: Optional pre-existing report URL to reuse
             
         Returns:
             Dict containing:
@@ -291,8 +299,9 @@ class TelegramNotifier:
         def escape_html(text: str) -> str:
             return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         
-        # Generate URL for detailed findings
-        finding_url = store_security_finding(repo_name, commit_info, analysis)
+        # Generate URL for detailed findings only if the finding has not already been stored.
+        if not finding_url:
+            finding_url = store_security_finding(repo_name, commit_info, analysis)
         
         # Create a short message with a link to the detailed findings
         severity_counts = {}
@@ -334,13 +343,7 @@ class TelegramNotifier:
         # Add cost information if available
         if cost_info:
             message += f"<b>Analysis Cost:</b> ${cost_info.total_cost:.4f}\n"
-            
-            # If multi-judge details are available, show individual LLM costs
-            if 'multi_judge_details' in analysis and analysis['multi_judge_details'].get('enabled'):
-                message += f"  • Total tokens: {cost_info.input_tokens:,} in / {cost_info.output_tokens:,} out\n"
-                # Note: Individual LLM costs would need to be passed separately
-                # For now, just show that multi-judge was used
-                message += f"  • Used {len(analysis['multi_judge_details']['providers'])} LLMs with weighted voting\n"
+            message += f"  • Total tokens: {cost_info.input_tokens:,} in / {cost_info.output_tokens:,} out\n"
         
         message += f'\n<a href="{finding_url}">View Detailed Security Report</a>'
         
@@ -349,8 +352,16 @@ class TelegramNotifier:
             'finding_url': finding_url
         }
         
-    def send_security_finding(self, repo_name: str, commit_info: CommitInfo, analysis: Dict, cost_info=None, 
-                             repo_telegram_channel_id: Optional[str] = None, notify_default_channel: bool = True) -> bool:
+    def send_security_finding(
+        self,
+        repo_name: str,
+        commit_info: CommitInfo,
+        analysis: Dict,
+        cost_info=None,
+        repo_telegram_channel_id: Optional[str] = None,
+        notify_default_channel: bool = True,
+        finding_url: Optional[str] = None
+    ) -> bool:
         """
         Send a security finding to Telegram.
         
@@ -361,12 +372,19 @@ class TelegramNotifier:
             cost_info: Optional cost information for the analysis
             repo_telegram_channel_id: Optional repository-specific channel ID
             notify_default_channel: Whether to also notify the default channel
+            finding_url: Optional pre-existing report URL to reuse
             
         Returns:
             bool: True if message was sent successfully
         """
         # Format the message and get finding URL
-        result = self.format_security_finding(repo_name, commit_info, analysis, cost_info)
+        result = self.format_security_finding(
+            repo_name,
+            commit_info,
+            analysis,
+            cost_info,
+            finding_url=finding_url
+        )
         
         # Send the short message with a link to detailed findings
         return self.send_message_to_channels(
@@ -382,7 +400,7 @@ class TelegramNotifier:
         Args:
             repo_name: Repository name
             commit_info: Commit information
-            analysis: Optional analysis results (for multi-judge details)
+            analysis: Optional analysis results
             cost_info: Optional cost information
             
         Returns:
@@ -408,25 +426,7 @@ class TelegramNotifier:
         # Add cost information if available
         if cost_info:
             message += f"\n<b>Analysis Cost:</b> ${cost_info.total_cost:.4f}\n"
-            
-            # If multi-judge details are available, show individual costs and results
-            if analysis and 'multi_judge_details' in analysis and analysis['multi_judge_details'].get('enabled'):
-                message += f"  • Total tokens: {cost_info.input_tokens:,} in / {cost_info.output_tokens:,} out\n"
-                message += f"  • Used {len(analysis['multi_judge_details']['providers'])} LLMs with weighted voting\n"
-                
-                # Show individual LLM costs
-                message += "\n<b>Cost Breakdown:</b>\n"
-                for provider in analysis['multi_judge_details']['providers']:
-                    result = analysis['multi_judge_details']['individual_results'].get(provider, {})
-                    provider_cost = result.get('cost', 0.0)
-                    message += f"  • <b>{provider.capitalize()}:</b> ${provider_cost:.4f}\n"
-                
-                # Show individual LLM results (which voted NO)
-                message += "\n<b>Individual LLM Results:</b>\n"
-                for provider in analysis['multi_judge_details']['providers']:
-                    result = analysis['multi_judge_details']['individual_results'].get(provider, {})
-                    vote = "✅" if not result.get('has_vulnerabilities', True) else "⚠️"
-                    message += f"  • <b>{provider.capitalize()}:</b> {vote} (confidence: {result.get('confidence_score', 0)}%)\n"
+            message += f"  • Total tokens: {cost_info.input_tokens:,} in / {cost_info.output_tokens:,} out\n"
         
         return message
         
@@ -721,33 +721,10 @@ class TelegramNotifier:
             from .__main__ import SecurityReview
             from github import Github, Auth
             
-            # Initialize security reviewer
-            # Use environment variables for API keys
-            provider_name = os.environ.get('LLM_PROVIDER', 'anthropic')
-            multi_judge = os.environ.get('MULTI_JUDGE', '').lower() in ('true', 'yes', '1')
-            
             provider_kwargs = {}
-            if provider_name == 'anthropic':
-                if model := os.environ.get('CLAUDE_MODEL'):
-                    provider_kwargs['model'] = model
-            elif provider_name == 'openai':
-                if model := os.environ.get('GPT_MODEL'):
-                    provider_kwargs['model'] = model
-                    
-            # Set up document directory if specified
-            docs_dir = os.environ.get('DOCS_DIR')
-            if docs_dir:
-                docs_dir = os.path.abspath(docs_dir)
-                
-            reviewer = SecurityReview(
-                provider_name,
-                provider_kwargs,
-                docs_dir=docs_dir,
-                voyage_key=os.environ.get('VOYAGE_API_KEY'),
-                voyage_model=os.environ.get('VOYAGE_MODEL'),
-                multi_judge=multi_judge,
-                gemini_key=os.environ.get('GEMINI_API_KEY')
-            )
+            if model := os.environ.get('CLAUDE_MODEL'):
+                provider_kwargs['model'] = model
+            reviewer = SecurityReview(provider_kwargs=provider_kwargs, repo_name=repo_name)
             
             # Initialize GitHub client
             github = Github(auth=Auth.Token(self.github_token))
@@ -775,7 +752,7 @@ class TelegramNotifier:
                 changes = reviewer.get_pr_changes(pr)
                 
                 # Analyze the PR
-                analysis, cost_info = reviewer.analyze_security(changes)
+                analysis, cost_info = reviewer.analyze_security(changes, repo_name=repo_name)
                 
                 # Format response
                 if not response:  # If we didn't add closed warning
@@ -882,8 +859,6 @@ class TelegramNotifier:
             # Add cost information if available
             if cost_info and cost_info.total_cost > 0:
                 response += f"\n\n<b>Analysis Cost:</b> ${cost_info.total_cost:.4f}"
-                if multi_judge:
-                    response += f"\n<i>Multi-judge enabled</i>"
                     
             return response
             

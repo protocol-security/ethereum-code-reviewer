@@ -114,6 +114,37 @@
     .required {
         color: #e53e3e;
     }
+
+    .branch-config-list {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .branch-config-row {
+        display: grid;
+        grid-template-columns: 1.3fr 1fr 1fr auto;
+        gap: 0.75rem;
+        align-items: end;
+        padding: 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
+    }
+
+    .branch-config-actions {
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .branch-config-remove {
+        white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+        .branch-config-row {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -157,21 +188,34 @@
                     <div class="form-help">The full GitHub URL of the repository to monitor.</div>
                 </div>
 
-                <!-- Branches -->
                 <div class="form-group">
-                    <label for="branches" class="form-label">
+                    <label class="form-label">
                         <i class="fas fa-code-branch"></i>
-                        Branches <span class="required">*</span>
+                        Branch Configurations <span class="required">*</span>
                     </label>
-                    <input 
-                        type="text" 
-                        id="branches" 
-                        name="branches" 
-                        required 
-                        class="form-input"
-                        placeholder="main, develop, master"
-                    >
-                    <div class="form-help">Comma-separated list of branches to monitor.</div>
+                    <div id="branch-config-list" class="branch-config-list"></div>
+                    <button type="button" id="add-branch-config" class="btn btn-secondary" style="margin-top: 0.75rem;">
+                        <i class="fas fa-plus"></i>
+                        Add Branch
+                    </button>
+                    <div class="form-help">Configure each branch separately, with an optional starting commit and hardfork target.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="agent_file_path" class="form-label">
+                        <i class="fas fa-robot"></i>
+                        Agent File <span class="required">*</span>
+                    </label>
+                    <select id="agent_file_path" name="agent_file_path" required class="form-input">
+                        <option value="">Select an AGENT.md/AGENTS.md file</option>
+                        {% for agent_file in agent_files %}
+                        <option value="{{ agent_file }}">{{ agent_file }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-help">Select the filesystem agent prompt to use for reviews of this repository.</div>
+                    {% if not agent_files %}
+                    <div class="form-help" style="color: #e53e3e;">No agent files were found under ./agents. Add an AGENT.md or AGENTS.md file first.</div>
+                    {% endif %}
                 </div>
 
                 <!-- Telegram Channel ID -->
@@ -221,4 +265,48 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function createBranchConfigRow(values = {}) {
+        const row = document.createElement('div');
+        row.className = 'branch-config-row';
+        row.innerHTML = `
+            <div>
+                <label class="form-label">Branch <span class="required">*</span></label>
+                <input type="text" name="branch_name[]" class="form-input" required placeholder="main" value="${values.branch_name || ''}">
+            </div>
+            <div>
+                <label class="form-label">Starting Commit</label>
+                <input type="text" name="starting_commit_sha[]" class="form-input" placeholder="optional baseline SHA" value="${values.starting_commit_sha || ''}">
+            </div>
+            <div>
+                <label class="form-label">Hardfork</label>
+                <input type="text" name="hardfork_name[]" class="form-input" placeholder="e.g. cancun" value="${values.hardfork_name || ''}">
+            </div>
+            <div class="branch-config-actions">
+                <button type="button" class="btn btn-danger branch-config-remove">Remove</button>
+            </div>
+        `;
+        row.querySelector('.branch-config-remove').addEventListener('click', () => {
+            row.remove();
+            ensureAtLeastOneRow();
+        });
+        return row;
+    }
+
+    function ensureAtLeastOneRow() {
+        const list = document.getElementById('branch-config-list');
+        if (!list.children.length) {
+            list.appendChild(createBranchConfigRow());
+        }
+    }
+
+    document.getElementById('add-branch-config').addEventListener('click', () => {
+        document.getElementById('branch-config-list').appendChild(createBranchConfigRow());
+    });
+
+    ensureAtLeastOneRow();
+</script>
 {% endblock %}
