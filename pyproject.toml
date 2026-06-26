@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pr-security-review"
+name = "ethereum-code-reviewer"
 version = "0.1.0"
 description = "Automated security review of pull requests using LLMs"
 requires-python = ">=3.10"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["pr_security_review"]
+packages = ["ethereum_code_reviewer"]
 
 [project.optional-dependencies]
 test = [
@@ -26,12 +26,12 @@ test = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-v --cov=pr_security_review --cov-report=term-missing"
+addopts = "-v --cov=ethereum_code_reviewer --cov-report=term-missing"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.coverage.run]
-source = ["pr_security_review"]
+source = ["ethereum_code_reviewer"]
 omit = [
     "tests/*",
     "**/__init__.py",

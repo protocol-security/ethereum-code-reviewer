@@ -1,4 +1,4 @@
-from pr_security_review.commit_monitor import MonitoredRepository
+from ethereum_code_reviewer.commit_monitor import MonitoredRepository
 
 
 def test_monitored_repository_from_url_preserves_branch_level_settings():

@@ -2,9 +2,9 @@ import argparse
 
 import pytest
 
-import pr_security_review.__main__ as cli
-import pr_security_review.local_repo_manager as lrm
-from pr_security_review.review_types import BranchReviewTarget, CommitInfo
+import ethereum_code_reviewer.__main__ as cli
+import ethereum_code_reviewer.local_repo_manager as lrm
+from ethereum_code_reviewer.review_types import BranchReviewTarget, CommitInfo
 
 
 def _args(**overrides):

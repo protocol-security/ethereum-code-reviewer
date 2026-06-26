@@ -86,24 +86,24 @@ Review modes (agent file required for repo-scoped reviews):
 
 ```bash
 # A pull request
-python -m pr_security_review --mode pr https://github.com/org/repo/pull/1 \
+python -m ethereum_code_reviewer --mode pr https://github.com/org/repo/pull/1 \
   --agent-file agents/execution-layer/AGENTS.md
 
 # A single commit
-python -m pr_security_review --mode commit --repository org/repo <sha> \
+python -m ethereum_code_reviewer --mode commit --repository org/repo <sha> \
   --agent-file agents/execution-layer/AGENTS.md
 
 # The cumulative diff of a hardfork: from a starting commit to branch head
-python -m pr_security_review --mode start-commit --repository org/repo \
+python -m ethereum_code_reviewer --mode start-commit --repository org/repo \
   --branch master --start-commit <sha> --hardfork fusaka --strict-specs \
   --agent-file agents/execution-layer/AGENTS.md
 
 # A single file
-python -m pr_security_review --file https://github.com/org/repo/blob/main/core/vm/eips.go \
+python -m ethereum_code_reviewer --file https://github.com/org/repo/blob/main/core/vm/eips.go \
   --agent-file agents/execution-layer/AGENTS.md
 
 # Direct text on stdin (emits JSON)
-cat diff.txt | python -m pr_security_review --input-text \
+cat diff.txt | python -m ethereum_code_reviewer --input-text \
   --agent-file agents/execution-layer/AGENTS.md
 ```
 

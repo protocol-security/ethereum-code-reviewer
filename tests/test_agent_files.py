@@ -1,4 +1,4 @@
-from pr_security_review.agent_files import discover_agent_files, load_agent_instructions
+from ethereum_code_reviewer.agent_files import discover_agent_files, load_agent_instructions
 
 
 def test_discover_agent_files_finds_sample_agents():

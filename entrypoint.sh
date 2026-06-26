@@ -32,10 +32,10 @@ args=(--mode "$MODE")
 case "$MODE" in
   commit)
     # Review the triggering commit (the positional target); default to the checked-out SHA.
-    exec python -m pr_security_review "${args[@]}" "${GITHUB_SHA:?commit mode needs a commit SHA (GITHUB_SHA)}"
+    exec python -m ethereum_code_reviewer "${args[@]}" "${GITHUB_SHA:?commit mode needs a commit SHA (GITHUB_SHA)}"
     ;;
   *)
     # pr mode auto-reads the PR from GITHUB_EVENT_PATH; start-commit uses the flags above.
-    exec python -m pr_security_review "${args[@]}"
+    exec python -m ethereum_code_reviewer "${args[@]}"
     ;;
 esac

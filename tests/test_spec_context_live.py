@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-import pr_security_review.spec_context as sc
+import ethereum_code_reviewer.spec_context as sc
 
 
 @pytest.mark.skipif(
