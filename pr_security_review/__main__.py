@@ -200,7 +200,7 @@ def main():
             agent_file_path=args.agent_file
         )
 
-        if event_path:
+        if event_path and args.mode == 'pr':
             require_anthropic_key()
             with open(event_path, 'r') as f:
                 event = json.load(f)

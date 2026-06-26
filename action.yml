@@ -1,19 +1,66 @@
 name: 'Ethereum Security Reviewer'
-description: 'Automated security review of pull requests using LLMs'
+description: 'Claude-powered security review of Ethereum client PRs, commits, or cumulative hardfork ranges'
 inputs:
   github-token:
-    description: 'GitHub token for accessing PR content'
+    description: 'GitHub token, for reading the PR/commit and posting comments'
     required: true
+  claude-code-oauth-token:
+    description: 'Claude Code OAuth token from `claude setup-token` (recommended). Provide this or anthropic-api-key.'
+    required: false
   anthropic-api-key:
-    description: 'Anthropic API key for Claude access'
-    required: true
-  claude-model:
-    description: 'Specific Claude model to use'
+    description: 'Anthropic API key (alternative to claude-code-oauth-token).'
+    required: false
+  agent-file:
+    description: 'Path under ./agents to an AGENT.md/AGENTS.md in your repo'
+    required: false
+  prompt:
+    description: 'Extra reviewer instructions appended to the agent file prompt'
+    required: false
+  mode:
+    description: 'Review scope: pr | commit | start-commit'
+    required: false
+    default: 'pr'
+  repository:
+    description: 'owner/repo for commit/start-commit modes (defaults to the current repository)'
+    required: false
+  start-commit:
+    description: 'Baseline commit SHA for start-commit mode (cumulative review to branch head)'
+    required: false
+  branch:
+    description: 'Branch to review for start-commit mode'
+    required: false
+  hardfork:
+    description: 'Hardfork name (e.g. fusaka) to scope EIP context'
+    required: false
+  model:
+    description: 'Claude model id'
     required: false
     default: 'claude-opus-4-8'
+  post-comment:
+    description: 'Post findings as a PR/commit comment'
+    required: false
+    default: 'true'
+  strict-specs:
+    description: "Fail the run if the hardfork's expected EIPs could not all be fetched"
+    required: false
+    default: 'false'
 runs:
   using: 'docker'
   image: 'Dockerfile'
+  env:
+    GITHUB_TOKEN: ${{ inputs.github-token }}
+    CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-code-oauth-token }}
+    ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+    CLAUDE_MODEL: ${{ inputs.model }}
+    INPUT_MODE: ${{ inputs.mode }}
+    INPUT_AGENT_FILE: ${{ inputs.agent-file }}
+    INPUT_PROMPT: ${{ inputs.prompt }}
+    INPUT_REPOSITORY: ${{ inputs.repository }}
+    INPUT_START_COMMIT: ${{ inputs.start-commit }}
+    INPUT_BRANCH: ${{ inputs.branch }}
+    INPUT_HARDFORK: ${{ inputs.hardfork }}
+    INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+    INPUT_STRICT_SPECS: ${{ inputs.strict-specs }}
 branding:
   icon: 'shield'
   color: 'blue'

@@ -14,6 +14,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[tool.setuptools]
+packages = ["pr_security_review"]
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0.0",

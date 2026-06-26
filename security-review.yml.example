@@ -1,4 +1,9 @@
-name: Ethereum Code Reviewer
+# Drop this in .github/workflows/ in your client repo.
+#
+# Auth: run `claude setup-token` locally and save the output as a repository
+# secret named CLAUDE_CODE_OAUTH_TOKEN (or use an ANTHROPIC_API_KEY secret).
+
+name: Ethereum Security Review
 
 on:
   pull_request:
@@ -8,10 +13,26 @@ jobs:
   security-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - name: Ethereum Security Reviewer
-        uses: protocol-security/ethereum-code-reviewer@0.1.1
+        uses: protocol-security/ethereum-code-reviewer@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          llm-provider: 'anthropic'
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }} # for Anthropic (Claude)
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          agent-file: agents/execution-layer/AGENTS.md
+          # prompt: 'Also focus on reentrancy in the new precompile.'
+
+# ---------------------------------------------------------------------------
+# Example: cumulative review of a whole hardfork from its starting commit,
+# e.g. triggered manually (on: workflow_dispatch):
+#
+#   - name: Review Fusaka changes
+#     uses: protocol-security/ethereum-code-reviewer@v2
+#     with:
+#       github-token: ${{ secrets.GITHUB_TOKEN }}
+#       claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+#       mode: start-commit
+#       start-commit: <sha-where-fusaka-work-began>
+#       branch: master
+#       hardfork: fusaka
+#       agent-file: agents/execution-layer/AGENTS.md
+#       strict-specs: 'true'
