@@ -165,19 +165,11 @@ class SecurityReview:
         if resolved_agent_file:
             return resolved_repo_name or "", resolved_agent_file
 
-        if not resolved_repo_name:
-            raise ValueError("Repository-specific review requires a configured repository and agent file")
-
-        from .database import get_database_manager
-
-        db_manager = get_database_manager()
-        repository = db_manager.get_repository(resolved_repo_name)
-        if not repository:
-            raise ValueError(f"Repository not found: {resolved_repo_name}")
-        if not repository.agent_file_path:
-            raise ValueError(f"Repository {resolved_repo_name} does not have an AGENT.md/AGENTS.md file configured")
-
-        return resolved_repo_name, repository.agent_file_path
+        raise ValueError(
+            "No agent file configured for this review. Pass --agent-file "
+            "(a path under ./agents to an AGENT.md/AGENTS.md), e.g. "
+            "agents/execution-layer/AGENTS.md."
+        )
 
     def get_pr_changes(self, pr: PullRequest) -> str:
         changes = []

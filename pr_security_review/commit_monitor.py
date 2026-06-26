@@ -18,12 +18,6 @@ from github.Repository import Repository
 from .local_repo_manager import LocalRepositoryManager
 from .review_types import BranchReviewTarget, CommitInfo
 
-try:
-    from .database import get_database_manager
-    DATABASE_AVAILABLE = True
-except ImportError:
-    DATABASE_AVAILABLE = False
-
 
 @dataclass
 class MonitoredBranch:
@@ -134,14 +128,7 @@ class CommitMonitor:
         self.last_commits: Dict[str, Dict[str, str]] = {}
         self.local_repo_manager = LocalRepositoryManager(github_token)
 
-        if DATABASE_AVAILABLE:
-            try:
-                self._load_repositories_from_database()
-            except Exception as e:
-                print(f"Warning: Failed to load repositories from database: {e}")
-                if config_file and os.path.exists(config_file):
-                    self._load_repositories_from_config(config_file)
-        elif config_file and os.path.exists(config_file):
+        if config_file and os.path.exists(config_file):
             self._load_repositories_from_config(config_file)
 
     def _save_state(self) -> None:
@@ -190,26 +177,6 @@ class CommitMonitor:
             for branch_config in monitored_repo.branch_configs:
                 self._update_last_commit_map(monitored_repo.full_name, branch_config.branch_name, branch_config.last_seen_head_sha)
 
-    def _load_repositories_from_database(self) -> None:
-        db_manager = get_database_manager()
-        repositories = db_manager.get_repositories_for_monitoring()
-
-        print("\nLoading repositories from database")
-        print(f"Found {len(repositories)} active repositories to monitor\n")
-
-        for repo_config in repositories:
-            monitored_repo = MonitoredRepository.from_url(
-                url=repo_config["url"],
-                branches=repo_config.get("branches"),
-                branch_configs=repo_config.get("branch_configs"),
-                agent_file_path=repo_config.get("agent_file_path"),
-                telegram_channel_id=repo_config.get("telegram_channel_id"),
-                notify_default_channel=repo_config.get("notify_default_channel", False),
-            )
-            self.monitored_repos.append(monitored_repo)
-            for branch_config in monitored_repo.branch_configs:
-                self._update_last_commit_map(monitored_repo.full_name, branch_config.branch_name, branch_config.last_seen_head_sha)
-
     def add_repository(self, repo_url: str, branches: List[str]) -> None:
         monitored_repo = MonitoredRepository.from_url(repo_url, branches=branches)
         existing = next((repo for repo in self.monitored_repos if repo.full_name == monitored_repo.full_name), None)
@@ -249,21 +216,6 @@ class CommitMonitor:
         if last_sync_error is not None or local_sync_status in {"ready", "reviewed", "syncing"}:
             branch_config.last_sync_error = last_sync_error
         branch_config.last_synced_at = now
-
-        if DATABASE_AVAILABLE:
-            try:
-                db_manager = get_database_manager()
-                db_manager.update_repository_branch_runtime_state(
-                    monitored_repo.full_name,
-                    branch_config.branch_name,
-                    last_seen_head_sha=head_sha,
-                    last_reviewed_head_sha=last_reviewed_head_sha,
-                    local_sync_status=local_sync_status,
-                    last_sync_error=last_sync_error,
-                    last_synced_at=datetime.now(timezone.utc),
-                )
-            except Exception as e:
-                print(f"Warning: Failed to persist branch state for {monitored_repo.full_name}/{branch_config.branch_name}: {e}")
 
     def mark_branch_reviewed(self, repository_name: str, branch_name: str, head_sha: str) -> None:
         monitored_repo = next((repo for repo in self.monitored_repos if repo.full_name == repository_name), None)
