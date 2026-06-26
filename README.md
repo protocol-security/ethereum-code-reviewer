@@ -1,324 +1,144 @@
-# ECR
+# Ethereum Code Reviewer (ECR)
 
-Ethereum Code Reviewer is a Claude Code SDK based security reviewer for Ethereum pull requests, commits, files, and monitored branches.
+A Claude Code SDK based security reviewer for Ethereum client code. Run it as a
+**GitHub Action** in any client repo, or as a **CLI** locally. It reviews a pull
+request, a single commit, or the cumulative diff of a whole hardfork, and always
+pulls the **latest EIPs live** for context — no vendored spec corpus to keep in
+sync.
 
-The current implementation is intentionally Claude-only. The old multi-provider and vector database paths have been removed; review prompts now come from local `AGENT.md` / `AGENTS.md` files, and relevant specification context is selected directly from the `vectordb-docs` Markdown submodule.
+## How it works
 
-## Capabilities
-
-- Review GitHub pull requests, recent pull requests, individual files, individual commits, and direct stdin input.
-- Run as a GitHub App webhook server for automatic and `/security-review` triggered PR review.
-- Monitor configured repository branches continuously.
-- Review either the latest branch commit or a cumulative diff from a configured starting commit to branch head.
-- Scope monitored reviews to a hardfork such as `cancun`, `prague`, `electra`, or `fulu`.
-- Use repository-specific agent prompt files from `./agents`.
-- Include local Ethereum specification and vulnerability context from `./vectordb-docs/docs`.
-- Store findings in PostgreSQL, show them in the web app, and deduplicate repeated finding rows.
-- Send Telegram and email notifications.
-- Listen for review jobs from an AMQP/RabbitMQ queue.
+- Reviews are performed by Claude through the `claude-code-sdk` (which drives the
+  `@anthropic-ai/claude-code` CLI) — Claude only, no other providers.
+- The reviewer prompt comes from a small agent file. Two are bundled:
+  `agents/execution-layer/AGENTS.md` and `agents/consensus-layer/AGENTS.md`.
+- EIP/spec context is fetched at runtime: it parses
+  [`eips.ethereum.org/meta`](https://eips.ethereum.org/meta) to find a fork's
+  Hardfork-Meta EIP, reads its "Included EIPs" (or "Scheduled for Inclusion" for
+  draft forks), and downloads those EIPs from `ethereum/EIPs`. EIPs referenced in
+  the diff are fetched too. Downloaded EIPs are cached, so re-runs only fetch new
+  ones. A per-run manifest reconciles expected-vs-fetched EIPs.
 
 ## Requirements
 
-- Python 3.8 or higher.
-- A GitHub token with read access to reviewed repositories.
-- An Anthropic API key.
-- The `claude-code-sdk` Python package and the `@anthropic-ai/claude-code` CLI available in the runtime environment.
-- PostgreSQL for the web app, repository configuration, finding storage, and duplicate cleanup.
+- Python ≥ 3.10.
+- The `@anthropic-ai/claude-code` CLI (`npm install -g @anthropic-ai/claude-code`).
+- A Claude credential: a Claude Code OAuth token from `claude setup-token`
+  (recommended), or an `ANTHROPIC_API_KEY`.
+- A GitHub token with read access to the reviewed repo (and write, to post comments).
 
-## Install
+## Use it as a GitHub Action
 
-```bash
-git submodule update --init --remote --recursive
-pip install -e .
+In the client repo you want reviewed, run `claude setup-token` locally and save the
+output as a repository secret named `CLAUDE_CODE_OAUTH_TOKEN`. Then add a workflow
+(`.github/workflows/security-review.yml`):
+
+```yaml
+name: Ethereum Security Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  security-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: protocol-security/ethereum-code-reviewer@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          agent-file: agents/execution-layer/AGENTS.md
+          # prompt: 'Also focus on reentrancy in the new precompile.'
 ```
 
-The `vectordb-docs` submodule is configured to track its `master` branch. Use `--remote` during setup or deployment when you want the newest docs instead of the commit pinned by this repository.
+That's the whole setup — a workflow file plus one secret. See
+`security-review.yml.example` for a cumulative hardfork-review example
+(`mode: start-commit`).
 
-Install the Claude Code CLI separately if it is not already available:
+### Action inputs
+
+| Input | Default | Description |
+|---|---|---|
+| `github-token` | — (required) | Token for reading the PR/commit and posting comments |
+| `claude-code-oauth-token` | — | Claude Code OAuth token from `claude setup-token` (provide this or `anthropic-api-key`) |
+| `anthropic-api-key` | — | Anthropic API key (alternative auth) |
+| `agent-file` | — | Path under `agents/` to an AGENT.md/AGENTS.md (bundled, or committed in your repo) |
+| `prompt` | — | Extra reviewer instructions appended to the agent prompt |
+| `mode` | `pr` | `pr`, `commit`, or `start-commit` |
+| `repository` | current repo | `owner/repo` for `commit`/`start-commit` modes |
+| `start-commit` | — | Baseline SHA for `start-commit` (cumulative review to branch head) |
+| `branch` | — | Branch to review for `start-commit` |
+| `hardfork` | — | Hardfork name (e.g. `fusaka`) to scope EIP context |
+| `model` | `claude-opus-4-8` | Claude model id |
+| `post-comment` | `true` | Post findings as a PR/commit comment |
+| `strict-specs` | `false` | Fail the run if the fork's expected EIPs couldn't all be fetched |
+
+## Use it as a CLI
 
 ```bash
 npm install -g @anthropic-ai/claude-code
+pip install -e .
+
+export GITHUB_TOKEN=...                 # repo read (+ write to post comments)
+export CLAUDE_CODE_OAUTH_TOKEN=...      # from `claude setup-token`  (or ANTHROPIC_API_KEY=...)
 ```
 
-## Environment
-
-The tool loads `.env` automatically when present.
+Review modes (agent file required for repo-scoped reviews):
 
 ```bash
-cp .env.example .env
-```
-
-Minimum CLI configuration:
-
-```bash
-export GITHUB_TOKEN=your_github_token
-export ANTHROPIC_API_KEY=your_anthropic_key
-```
-
-Optional model override:
-
-```bash
-export CLAUDE_MODEL=<claude-model-name>
-```
-
-If no model is configured, the current code defaults to `claude-3-5-sonnet-20241022`.
-
-Web app, repository configuration, and persisted findings require:
-
-```bash
-export DATABASE_URL=postgresql://username:password@localhost:5432/security_findings
-export GOOGLE_CLIENT_ID=your_google_client_id
-export FLASK_SECRET_KEY=your_flask_secret
-export AUTHORIZED_EMAILS=admin@example.com
-```
-
-## Agent Files
-
-Each review uses a local agent prompt file under `./agents`. The repository includes:
-
-- `agents/execution-layer/AGENTS.md`
-- `agents/consensus-layer/AGENTS.md`
-
-For ad hoc CLI reviews, pass the agent explicitly:
-
-```bash
-python -m pr_security_review https://github.com/owner/repo/pull/1 \
+# A pull request
+python -m pr_security_review --mode pr https://github.com/org/repo/pull/1 \
   --agent-file agents/execution-layer/AGENTS.md
-```
 
-For configured repositories, the selected agent file is stored on the repository record through the admin web UI or database configuration. If no `--agent-file` is passed, the reviewer resolves the agent from that repository configuration.
-
-## Specification Context
-
-The reviewer no longer creates embeddings or uses Voyage/OpenAI embedding APIs. Instead, it reads Markdown files from the `vectordb-docs` submodule and selects a bounded set of relevant documents for each review.
-
-Agent path controls the default docs scope:
-
-- `agents/execution-layer/AGENTS.md` maps to `vectordb-docs/docs/execution`.
-- `agents/consensus-layer/AGENTS.md` maps to `vectordb-docs/docs/consensus`.
-- Other agent paths fall back to `vectordb-docs/docs`.
-
-When a branch has a `hardfork_name`, matching hardfork `eips` and `specs` folders are preferred, with vulnerability docs included as additional context.
-
-## CLI
-
-### Single PR
-
-```bash
-python -m pr_security_review https://github.com/org/repo/pull/1 \
+# A single commit
+python -m pr_security_review --mode commit --repository org/repo <sha> \
   --agent-file agents/execution-layer/AGENTS.md
-```
 
-Post a comment only when vulnerabilities are found:
-
-```bash
-python -m pr_security_review https://github.com/org/repo/pull/1 \
-  --agent-file agents/execution-layer/AGENTS.md \
-  --post-comment
-```
-
-### Recent PRs
-
-```bash
-python -m pr_security_review --recent-prs owner/repo \
-  --pr-count 10 \
+# The cumulative diff of a hardfork: from a starting commit to branch head
+python -m pr_security_review --mode start-commit --repository org/repo \
+  --branch master --start-commit <sha> --hardfork fusaka --strict-specs \
   --agent-file agents/execution-layer/AGENTS.md
-```
 
-### Single File
-
-```bash
-python -m pr_security_review --file https://github.com/org/repo/blob/main/src/file.rs \
+# A single file
+python -m pr_security_review --file https://github.com/org/repo/blob/main/core/vm/eips.go \
   --agent-file agents/execution-layer/AGENTS.md
-```
 
-### Single Commit
-
-```bash
-python -m pr_security_review --repository owner/repo --analyze-commit <sha> \
-  --agent-file agents/execution-layer/AGENTS.md
-```
-
-### Direct Text Input
-
-```bash
+# Direct text on stdin (emits JSON)
 cat diff.txt | python -m pr_security_review --input-text \
   --agent-file agents/execution-layer/AGENTS.md
 ```
 
-## Branch Monitoring
+Useful flags: `--post-comment` (post to the PR), `--extra-prompt "..."` (append to
+the agent prompt), `--model <id>`, `--strict-specs` (fail on a missing fork EIP).
+The start-commit clone is stored under `REVIEWER_DATA_DIR` (defaults to a temp
+dir); fetched EIPs are cached under `REVIEWER_CACHE_DIR`.
 
-Monitoring uses local bare clones and branch worktrees. By default, data is stored under `/var/lib/reviewer/data`; override it with `REVIEWER_DATA_DIR`.
+## Agents and custom prompts
 
-Add a repository with legacy branch-only CLI configuration:
+Pick a bundled agent with `--agent-file`/`agent-file` (execution or consensus
+layer). To add repo- or review-specific guidance without writing a whole agent
+file, pass `--extra-prompt` (CLI) / `prompt` (Action) — it's appended to the agent
+prompt. You may also commit your own `agents/.../AGENTS.md` in your repo and point
+`agent-file` at it.
 
-```bash
-python -m pr_security_review --monitor-add https://github.com/NethermindEth/nethermind \
-  --monitor-branches master
-```
+## Hardfork EIP context
 
-List monitored repositories:
+Pass `--hardfork <name>` (e.g. `fusaka`, `pectra`, `dencun`; layer code-names like
+`fulu`/`osaka` also resolve). The reviewer discovers the fork's complete EIP set
+from its Meta EIP and fetches each one. Drafts (e.g. `glamsterdam`) use the
+"Scheduled for Inclusion" list. With `--strict-specs`, the run fails if any
+expected EIP could not be fetched.
 
-```bash
-python -m pr_security_review --monitor-list
-```
-
-Check once:
-
-```bash
-python -m pr_security_review --monitor-check
-```
-
-Run continuously:
+## Development
 
 ```bash
-python -m pr_security_review --monitor-continuous --monitor-interval 300
+pip install -e .[test]
+pytest                                   # unit tests (network-free)
+RUN_LIVE_SPEC_TESTS=1 pytest tests/test_spec_context_live.py   # live EIP-fetch oracle
+
+docker build -t ecr .                    # build the Action image
+docker run --rm --entrypoint claude ecr --version   # smoke-test the bundled CLI
 ```
-
-For branch-specific review settings, use the admin web UI or a JSON config file:
-
-```json
-{
-  "repositories": [
-    {
-      "url": "https://github.com/ethereum/go-ethereum",
-      "agent_file_path": "agents/execution-layer/AGENTS.md",
-      "branch_configs": [
-        {
-          "branch_name": "master",
-          "starting_commit_sha": "abc123",
-          "hardfork_name": "prague"
-        }
-      ],
-      "telegram_channel_id": "-1001234567890",
-      "notify_default_channel": true
-    }
-  ]
-}
-```
-
-Use it with:
-
-```bash
-python -m pr_security_review --config-file ./monitoring.json --monitor-check
-```
-
-If `starting_commit_sha` is set, the review covers the cumulative diff from that commit to branch head. If it is omitted, only the latest commit is reviewed.
-
-## GitHub App
-
-The GitHub App mode runs a webhook server for automatic PR review and `/security-review` comment triggers.
-
-```bash
-python -m pr_security_review \
-  --github-app \
-  --github-app-id YOUR_APP_ID \
-  --github-private-key-path path/to/private-key.pem \
-  --github-webhook-secret YOUR_WEBHOOK_SECRET \
-  --anthropic-api-key YOUR_ANTHROPIC_KEY \
-  --model <claude-model-name>
-```
-
-Required app permissions:
-
-- Pull requests: read and write.
-- Repository contents: read.
-- Repository collaborators: read.
-
-Subscribed events:
-
-- Pull request.
-- Issue comment.
-
-## Web App
-
-The Dockerfile runs the web app with Gunicorn:
-
-```bash
-docker build -t ethereum-code-reviewer:latest .
-docker run --rm -p 5000:5000 --env-file .env ethereum-code-reviewer:latest
-```
-
-The admin UI supports repository creation and editing with:
-
-- GitHub repository URL.
-- Branch configurations.
-- Optional starting commit per branch.
-- Optional hardfork name per branch.
-- Required agent file selection.
-- Optional repository-specific Telegram channel.
-
-Creating a repository through the admin UI starts a background bootstrap review for the configured branches when `GITHUB_TOKEN` is available.
-
-## Queue Listener
-
-Use an AMQP queue for asynchronous review requests:
-
-```bash
-python -m pr_security_review \
-  --listen-queue \
-  --amqp-url amqp://guest:guest@localhost:5672/ \
-  --queue-name security_review_requests \
-  --response-queue-name security_review_responses
-```
-
-If `AMQP_URL` is set and no other mode is selected, queue listener mode is auto-detected.
-
-## Notifications
-
-Telegram notifications:
-
-```bash
-export TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-export TELEGRAM_CHAT_ID=your_telegram_chat_id
-export NOTIFY_CLEAN_COMMITS=false
-python -m pr_security_review --monitor-continuous
-```
-
-When Telegram is configured for monitoring, the findings web app is started so notification links can point to stored finding details. Repository-specific Telegram channel settings can be configured per repository.
-
-Email notifications use Amazon SES:
-
-```bash
-export AWS_SES_REGION=us-east-1
-export SES_FROM_EMAIL=security-findings@example.com
-export BASE_URL=https://your-domain.example
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-```
-
-## Database Management
-
-Initialize and inspect the PostgreSQL database:
-
-```bash
-python -m pr_security_review.db_utils init
-python -m pr_security_review.db_utils check
-python -m pr_security_review.db_utils stats
-```
-
-List and inspect findings:
-
-```bash
-python -m pr_security_review.db_utils list --repo ethereum/go-ethereum --limit 20
-python -m pr_security_review.db_utils details <uuid>
-```
-
-Clean up expired findings:
-
-```bash
-python -m pr_security_review.db_utils cleanup
-```
-
-Remove duplicate findings created by repeated persistence of the same scan:
-
-```bash
-python -m pr_security_review.db_utils dedupe --dry-run
-python -m pr_security_review.db_utils dedupe --repo ethereum/go-ethereum
-```
-
-Duplicate cleanup keeps the newest matching row and treats rows as duplicates only when they share the same repository, PR number, commit SHA, vulnerability flag, summary, finding count, and are within the configured time window.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License — see the LICENSE file.
