@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,6 +30,14 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_CLAUDE_MODEL = "claude-opus-4-8"
+
+# Running headless Claude: block tools that wait for a human or spawn sub-agents,
+# so the agent can't park and exit without a final answer.
+DISALLOWED_TOOLS = [
+    "ScheduleWakeup", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
+    "EnterWorktree", "ExitWorktree", "Monitor", "PushNotification",
+    "CronCreate", "CronDelete", "CronList", "RemoteTrigger", "Task", "Workflow",
+]
 
 
 @dataclass
@@ -233,6 +242,7 @@ class SecurityReview:
                 max_turns=self.max_turns,
                 max_thinking_tokens=self.max_thinking_tokens,
                 cwd=working_directory or str(REPO_ROOT),
+                disallowed_tools=DISALLOWED_TOOLS,
             )
         ) as client:
             await client.query(user_prompt)
@@ -345,9 +355,27 @@ Return ONLY a JSON object with this shape:
                 working_directory=working_directory,
             )
         )
-        cleaned_json = _extract_json_from_response(raw_output)
-        result = json.loads(cleaned_json)
-        result = _validate_response(result)
+        try:
+            cleaned_json = _extract_json_from_response(raw_output)
+            result = json.loads(cleaned_json)
+            result = _validate_response(result)
+        except (ValueError, json.JSONDecodeError) as exc:
+            # The Claude Code SDK returned something that isn't the expected JSON
+            # (often an auth/startup error, a refusal, or prose). Surface it so the
+            # failure is diagnosable instead of a bare "Expecting value" traceback.
+            snippet = (raw_output or "").strip()
+            print(
+                "[claude_review] Could not parse a JSON review from the model.\n"
+                f"  model: {self.model}\n"
+                f"  raw response length: {len(raw_output or '')} chars\n"
+                f"  raw response (first 2000 chars): {snippet[:2000] or '<empty>'}",
+                file=sys.stderr,
+            )
+            raise ValueError(
+                "Claude did not return a parseable JSON review "
+                f"({exc}). See the raw response logged above — an empty/short "
+                "response usually means a Claude auth or model error."
+            ) from exc
 
         reasoning_log = {
             "repo_name": resolved_repo_name,
@@ -377,7 +405,15 @@ Return ONLY a JSON object with this shape:
             metadata={"reasoning_log": reasoning_log},
         )
 
-    def analyze_commit(self, repo_name: str, commit_sha: str, branch: str = None) -> Tuple[Dict[str, Any], CostInfo]:
+    def analyze_commit(
+        self,
+        repo_name: str,
+        commit_sha: str,
+        branch: str = None,
+        hardfork_name: Optional[str] = None,
+        strict_specs: bool = False,
+        extra_prompt: Optional[str] = None,
+    ) -> Tuple[Dict[str, Any], CostInfo]:
         if not self.github:
             raise ValueError("GitHub client not initialized")
 
@@ -386,7 +422,15 @@ Return ONLY a JSON object with this shape:
         if not commit_changes:
             raise ValueError(f"Could not retrieve commit {commit_sha} from {repo_name}")
 
-        return self.analyze_security(commit_changes, repo_name=repo_name, branch_name=branch, head_sha=commit_sha)
+        return self.analyze_security(
+            commit_changes,
+            repo_name=repo_name,
+            branch_name=branch,
+            head_sha=commit_sha,
+            hardfork_name=hardfork_name,
+            strict_specs=strict_specs,
+            extra_prompt=extra_prompt,
+        )
 
     def create_report_comment(self, pr: PullRequest, analysis: Dict[str, Any], cost_info: CostInfo = None) -> None:
         report = f"""## Security Review

@@ -255,7 +255,10 @@ def main():
                 print(f"\nNo commit given; using latest commit on "
                       f"{args.branch or 'the default branch'}: {commit_sha[:7]}")
             print(f"\nAnalyzing commit {commit_sha[:7]} in {args.repository}")
-            analysis, cost_info = reviewer.analyze_commit(args.repository, commit_sha, branch=args.branch)
+            analysis, cost_info = reviewer.analyze_commit(
+                args.repository, commit_sha, branch=args.branch,
+                hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
+            )
             print_analysis(analysis, cost_info)
             emit_status(analysis)
             return
