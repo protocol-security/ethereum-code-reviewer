@@ -1,6 +1,6 @@
 import subprocess
 
-from pr_security_review.local_repo_manager import LocalRepositoryManager
+from ethereum_code_reviewer.local_repo_manager import LocalRepositoryManager
 
 
 def _git(cwd, *args):

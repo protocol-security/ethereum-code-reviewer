@@ -88,7 +88,7 @@ def _normalize(name: str) -> str:
 
 
 def _cache_dir() -> Path:
-    base = os.environ.get("REVIEWER_CACHE_DIR") or os.path.join(tempfile.gettempdir(), "pr_security_review_specs")
+    base = os.environ.get("REVIEWER_CACHE_DIR") or os.path.join(tempfile.gettempdir(), "ethereum_code_reviewer_specs")
     path = Path(base)
     path.mkdir(parents=True, exist_ok=True)
     return path

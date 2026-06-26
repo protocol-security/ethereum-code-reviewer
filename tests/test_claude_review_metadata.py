@@ -1,4 +1,4 @@
-from pr_security_review.claude_review import CostInfo, build_storage_metadata
+from ethereum_code_reviewer.claude_review import CostInfo, build_storage_metadata
 
 
 def test_build_storage_metadata_includes_reasoning_log():

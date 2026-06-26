@@ -123,7 +123,7 @@ class CommitMonitor:
 
         self.github = Github(auth=Auth.Token(github_token))
         self.github_token = github_token
-        self.state_file = state_file or os.path.join(os.path.expanduser("~"), ".pr_security_review", "commit_monitor_state.json")
+        self.state_file = state_file or os.path.join(os.path.expanduser("~"), ".ethereum_code_reviewer", "commit_monitor_state.json")
         self.monitored_repos: List[MonitoredRepository] = []
         self.last_commits: Dict[str, Dict[str, str]] = {}
         self.local_repo_manager = LocalRepositoryManager(github_token)
