@@ -269,12 +269,15 @@ class SecurityReview:
         head_sha: Optional[str] = None,
         working_directory: Optional[str] = None,
         strict_specs: bool = False,
+        extra_prompt: Optional[str] = None,
     ) -> Tuple[Dict[str, Any], CostInfo]:
         resolved_repo_name, resolved_agent_file = self._resolve_review_config(
             repo_name=repo_name,
             agent_file_path=agent_file_path,
         )
         agent_instructions = load_agent_instructions(resolved_agent_file)
+        if extra_prompt:
+            agent_instructions = f"{agent_instructions}\n\n# Additional reviewer instructions\n{extra_prompt}"
         docs_context: ReviewContextResult = build_review_context(
             resolved_agent_file,
             code_changes,
