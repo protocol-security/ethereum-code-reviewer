@@ -16,7 +16,7 @@ from github.PullRequest import PullRequest
 
 from .agent_files import load_agent_instructions
 from .commit_monitor import CommitMonitor
-from .docs_context import ReviewContextResult, build_review_context
+from .spec_context import ReviewContextResult, build_review_context
 from .review_types import CommitInfo
 
 try:
@@ -268,6 +268,7 @@ class SecurityReview:
         baseline_sha: Optional[str] = None,
         head_sha: Optional[str] = None,
         working_directory: Optional[str] = None,
+        strict_specs: bool = False,
     ) -> Tuple[Dict[str, Any], CostInfo]:
         resolved_repo_name, resolved_agent_file = self._resolve_review_config(
             repo_name=repo_name,
@@ -278,6 +279,7 @@ class SecurityReview:
             resolved_agent_file,
             code_changes,
             hardfork_name=hardfork_name,
+            strict=strict_specs,
         )
 
         user_prompt = f"""Review the following changed code for concrete security vulnerabilities.
@@ -342,6 +344,7 @@ Return ONLY a JSON object with this shape:
             "transcript": transcript,
             "selected_docs": docs_context.selected_docs,
             "docs_scope": docs_context.scope_description,
+            "spec_manifest": docs_context.manifest,
         }
         if docs_context.text:
             reasoning_log["docs_context"] = docs_context.text

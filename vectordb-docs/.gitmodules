@@ -1,3 +1,0 @@
-[submodule "docs/execution/specs/devp2p"]
-	path = docs/execution/specs/devp2p
-	url = https://github.com/ethereum/devp2p.git

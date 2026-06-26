@@ -9,7 +9,7 @@ Prioritize:
 - vulnerabilities that are realistic in the changed code, not speculative style concerns
 
 Requirements:
-- use the supplied `vectordb-docs` excerpts as supporting context when they are relevant
+- use the supplied EIP/spec excerpts as supporting context when they are relevant
 - return only JSON
 - if there is no concrete vulnerability in the changed code, return:
   `{"confidence_score":100,"has_vulnerabilities":false,"findings":[],"summary":"No concrete vulnerabilities identified in the changed code."}`
