@@ -187,6 +187,20 @@ class SecurityReview:
         prs = repo.get_pulls(state="all", sort="created", direction="desc")
         return list(prs[:count])
 
+    def get_latest_open_pr(self, repo_name: str) -> Optional[PullRequest]:
+        if not self.github:
+            raise ValueError("GitHub client not initialized")
+        repo = self.github.get_repo(repo_name)
+        prs = list(repo.get_pulls(state="open", sort="created", direction="desc")[:1])
+        return prs[0] if prs else None
+
+    def get_latest_commit_sha(self, repo_name: str, branch: Optional[str] = None) -> str:
+        if not self.github:
+            raise ValueError("GitHub client not initialized")
+        repo = self.github.get_repo(repo_name)
+        ref = branch or repo.default_branch
+        return repo.get_branch(ref).commit.sha
+
     def get_file_content(self, repo_name: str, branch: str, file_path: str) -> str:
         if not self.github:
             raise ValueError("GitHub client not initialized")

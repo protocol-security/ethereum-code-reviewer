@@ -200,10 +200,15 @@ def main():
             agent_file_path=args.agent_file
         )
 
-        if event_path and args.mode == 'pr':
+        if event_path and args.mode == 'pr' and not args.target:
             require_anthropic_key()
             with open(event_path, 'r') as f:
                 event = json.load(f)
+            if 'pull_request' not in event:
+                raise ValueError(
+                    "GITHUB_EVENT_PATH is not a pull_request event. For manual runs pass a "
+                    "PR URL/number as the target, or leave it empty with --repository to review the latest open PR."
+                )
             repo_name = event['repository']['full_name']
             repo = reviewer.github.get_repo(repo_name)
             pr = repo.get_pull(event['pull_request']['number'])
@@ -242,10 +247,15 @@ def main():
             return
 
         if args.mode == 'commit':
-            if not (args.repository and args.target):
-                raise ValueError("--mode commit requires --repository owner/repo and a commit SHA argument")
-            print(f"\nAnalyzing commit {args.target[:7]} in {args.repository}")
-            analysis, cost_info = reviewer.analyze_commit(args.repository, args.target, branch=args.branch)
+            if not args.repository:
+                raise ValueError("--mode commit requires --repository owner/repo")
+            commit_sha = args.target
+            if not commit_sha:
+                commit_sha = reviewer.get_latest_commit_sha(args.repository, args.branch)
+                print(f"\nNo commit given; using latest commit on "
+                      f"{args.branch or 'the default branch'}: {commit_sha[:7]}")
+            print(f"\nAnalyzing commit {commit_sha[:7]} in {args.repository}")
+            analysis, cost_info = reviewer.analyze_commit(args.repository, commit_sha, branch=args.branch)
             print_analysis(analysis, cost_info)
             emit_status(analysis)
             return
@@ -259,13 +269,25 @@ def main():
             return
 
         # default: --mode pr
-        if not args.target:
-            raise ValueError("Provide a PR URL (--mode pr), a commit SHA (--mode commit), --file, or --input-text")
-        repo_name, pr_number = parse_pr_url(args.target)
-        print(f"\nAnalyzing PR #{pr_number}")
+        if args.target:
+            if args.target.isdigit():
+                if not args.repository:
+                    raise ValueError("A PR number needs --repository owner/repo (or pass a full PR URL)")
+                repo_name, pr_number = args.repository, int(args.target)
+            else:
+                repo_name, pr_number = parse_pr_url(args.target)
+            repo = reviewer.github.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+        else:
+            if not args.repository:
+                raise ValueError("Provide a PR URL/number, or --repository to review the latest open PR")
+            repo_name = args.repository
+            pr = reviewer.get_latest_open_pr(repo_name)
+            if pr is None:
+                raise ValueError(f"No open pull requests found in {repo_name}")
+            print(f"\nNo PR given; using the latest open PR #{pr.number}")
+        print(f"\nAnalyzing PR #{pr.number}")
         print(f"Repository: {repo_name}")
-        repo = reviewer.github.get_repo(repo_name)
-        pr = repo.get_pull(pr_number)
         changes = reviewer.get_pr_changes(pr)
         analysis, cost_info = reviewer.analyze_security(
             changes, repo_name=repo_name, agent_file_path=args.agent_file,
