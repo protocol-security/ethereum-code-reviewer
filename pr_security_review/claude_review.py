@@ -1,5 +1,5 @@
 """
-Claude Code SDK-backed security review implementation.
+Claude Agent SDK-backed security review implementation.
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ from .spec_context import ReviewContextResult, build_review_context
 from .review_types import CommitInfo
 
 try:
-    from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
+    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 except ImportError:
     ClaudeSDKClient = None
-    ClaudeCodeOptions = None
+    ClaudeAgentOptions = None
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -203,9 +203,9 @@ class SecurityReview:
         user_prompt: str,
         working_directory: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
-        if ClaudeSDKClient is None or ClaudeCodeOptions is None:
+        if ClaudeSDKClient is None or ClaudeAgentOptions is None:
             raise RuntimeError(
-                "claude-code-sdk is not installed. Install the Python package and the @anthropic-ai/claude-code CLI."
+                "claude-agent-sdk is not installed. Install the Python package and the @anthropic-ai/claude-code CLI."
             )
 
         transcript: List[Dict[str, Any]] = [{"type": "user_prompt", "text": user_prompt}]
@@ -213,7 +213,7 @@ class SecurityReview:
         text_fragments: List[str] = []
 
         async with ClaudeSDKClient(
-            options=ClaudeCodeOptions(
+            options=ClaudeAgentOptions(
                 system_prompt=system_prompt,
                 model=self.model,
                 max_turns=self.max_turns,
@@ -359,7 +359,7 @@ Return ONLY a JSON object with this shape:
             input_tokens=0,
             output_tokens=0,
             model=self.model,
-            provider="claude-code-sdk",
+            provider="claude-agent-sdk",
             metadata={"reasoning_log": reasoning_log},
         )
 
