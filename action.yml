@@ -20,6 +20,9 @@ inputs:
     description: 'Review scope: pr | commit | start-commit'
     required: false
     default: 'pr'
+  target:
+    description: 'pr mode: a PR URL or number (empty = latest open PR). commit mode: a commit SHA (empty = latest commit).'
+    required: false
   repository:
     description: 'owner/repo for commit/start-commit modes (defaults to the current repository)'
     required: false
@@ -53,6 +56,7 @@ runs:
     ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
     CLAUDE_MODEL: ${{ inputs.model }}
     INPUT_MODE: ${{ inputs.mode }}
+    INPUT_TARGET: ${{ inputs.target }}
     INPUT_AGENT_FILE: ${{ inputs.agent-file }}
     INPUT_PROMPT: ${{ inputs.prompt }}
     INPUT_REPOSITORY: ${{ inputs.repository }}

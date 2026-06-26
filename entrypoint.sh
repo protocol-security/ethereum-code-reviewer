@@ -29,13 +29,17 @@ args=(--mode "$MODE")
 [ "${INPUT_STRICT_SPECS:-false}" = "true" ] && args+=(--strict-specs)
 [ "${INPUT_POST_COMMENT:-true}" = "true" ]  && args+=(--post-comment)
 
-case "$MODE" in
-  commit)
-    # Review the triggering commit (the positional target); default to the checked-out SHA.
-    exec python -m ethereum_code_reviewer "${args[@]}" "${GITHUB_SHA:?commit mode needs a commit SHA (GITHUB_SHA)}"
-    ;;
-  *)
-    # pr mode auto-reads the PR from GITHUB_EVENT_PATH; start-commit uses the flags above.
-    exec python -m ethereum_code_reviewer "${args[@]}"
-    ;;
-esac
+# Manual target (a PR URL/number for pr mode, or a commit SHA for commit mode).
+# Empty => the CLI reviews the latest PR / latest commit. For an on-`pull_request`
+# trigger, leave it empty and the CLI reads the PR from GITHUB_EVENT_PATH.
+TARGET="${INPUT_TARGET:-}"
+if [ -z "$TARGET" ] && [ "$MODE" = "commit" ] && [ -z "${INPUT_BRANCH:-}" ] && [ -n "${GITHUB_SHA:-}" ]; then
+  # commit mode with nothing specified: default to the checked-out commit.
+  TARGET="$GITHUB_SHA"
+fi
+
+if [ -n "$TARGET" ]; then
+  exec python -m ethereum_code_reviewer "${args[@]}" "$TARGET"
+else
+  exec python -m ethereum_code_reviewer "${args[@]}"
+fi
