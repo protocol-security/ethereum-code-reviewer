@@ -46,9 +46,16 @@ def parse_file_url(url: str) -> Tuple[str, str, str]:
 def main():
     """Main entry point for the security review action."""
     def require_anthropic_key() -> None:
-        api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('INPUT_ANTHROPIC-API-KEY')
-        if not api_key:
-            raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY or pass --anthropic-api-key.")
+        credential = (
+            os.environ.get('CLAUDE_CODE_OAUTH_TOKEN')
+            or os.environ.get('ANTHROPIC_API_KEY')
+            or os.environ.get('INPUT_ANTHROPIC-API-KEY')
+        )
+        if not credential:
+            raise ValueError(
+                "Claude credentials required. Set CLAUDE_CODE_OAUTH_TOKEN "
+                "(from `claude setup-token`) or ANTHROPIC_API_KEY."
+            )
 
     def build_provider_kwargs(model: Optional[str]) -> Dict[str, str]:
         resolved_model = model or os.environ.get('CLAUDE_MODEL') or os.environ.get('INPUT_CLAUDE-MODEL')

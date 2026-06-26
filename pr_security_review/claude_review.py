@@ -1,5 +1,5 @@
 """
-Claude Agent SDK-backed security review implementation.
+Claude Code SDK-backed security review implementation.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULT_CLAUDE_MODEL = "claude-opus-4-8"
 
 
 @dataclass
@@ -145,7 +147,7 @@ class SecurityReview:
         agent_file_path: Optional[str] = None,
     ):
         provider_kwargs = provider_kwargs or {}
-        self.model = provider_kwargs.get("model") or os.environ.get("CLAUDE_MODEL") or "claude-3-5-sonnet-20241022"
+        self.model = provider_kwargs.get("model") or os.environ.get("CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
         self.max_turns = provider_kwargs.get("max_turns", 4)
         self.max_thinking_tokens = provider_kwargs.get("max_thinking_tokens", 8000)
         self.default_repo_name = repo_name
