@@ -41,9 +41,9 @@ DISALLOWED_TOOLS = [
 ]
 
 # --- Live stream rendering (mirrors KAT's stream-json view) ---------------
-# A scannable, colorized live view of the agent as it works: 💭 thinking,
-# 💬 reasoning, 🔧 tool calls (one color per tool), ✅ result. Reproduction/
-# consensus signal words are painted red so the eye catches them.
+# A scannable, colorized live view of the agent as it works: thinking,
+# reasoning, tool calls (one color per tool), result. Reproduction/consensus
+# signal words are painted red so the eye catches them. No emojis.
 _SIGNAL_RE = re.compile(
     r"(panic|invalid opcode|invalid|fatal|divergen[a-z]*|state.?root|mismatch|"
     r"consensus|slash|segfault|goroutine|stack trace|fork.?choice|timeout|"
@@ -86,25 +86,24 @@ def _tool_summary(tool_input: Dict[str, Any]) -> str:
 
 
 def _print_stream_block(kind: str, payload: Any) -> None:
-    """Print one streamed event, KAT-style, to stderr (flushed for live CI)."""
+    """Print one streamed event to stderr (flushed, colorized for live CI)."""
     if kind == "thinking":
-        line = _c("2", "💭 " + _oneline(payload, 300))
+        line = _c("2", "  thinking: " + _oneline(payload, 300))
     elif kind == "text":
-        line = _c("36", "💬") + "  " + _paint_signals(_oneline(payload, 300))
+        line = _c("36", "  reasoning: ") + _paint_signals(_oneline(payload, 300))
     elif kind == "tool":
         name = payload.get("name", "tool")
         color = _TOOL_COLORS.get(name, "1;37")
-        line = _c(color, f"🔧 {name}") + "  " + _c("2", _oneline(_tool_summary(payload.get("input") or {}), 240))
+        line = _c(color, f"  {name}") + "  " + _c("2", _oneline(_tool_summary(payload.get("input") or {}), 240))
     elif kind == "result":
         # Don't echo the result body — it just repeats the last assistant text.
-        # A short completion marker keeps the live log clean.
         subtype = payload
         ok = subtype in (None, "success")
         line = _c("1;32" if ok else "1;31",
-                  "✅ review complete" if ok else f"⚠️ ended: {subtype}")
+                  "  review complete" if ok else f"  ended: {subtype}")
     else:
         return
-    print("\n" + line, file=sys.stderr, flush=True)
+    print(line, file=sys.stderr, flush=True)
 
 
 @dataclass
@@ -255,8 +254,10 @@ class SecurityReview:
     ):
         provider_kwargs = provider_kwargs or {}
         self.model = provider_kwargs.get("model") or os.environ.get("CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
-        self.max_turns = provider_kwargs.get("max_turns", 4)
-        self.max_thinking_tokens = provider_kwargs.get("max_thinking_tokens", 8000)
+        self.max_turns = provider_kwargs.get(
+            "max_turns", int(os.environ.get("REVIEW_MAX_TURNS", "40"))
+        )
+        self.max_thinking_tokens = provider_kwargs.get("max_thinking_tokens", 12000)
         self.default_repo_name = repo_name
         self.override_agent_file_path = agent_file_path
         # Stream the agent's thinking/tool calls live to the log as it works.
@@ -502,6 +503,18 @@ Review working directory: {working_directory or "not provided"}
 Configured hardfork: {hardfork_name or "not specified"}
 Starting commit: {baseline_sha or "latest commit only"}
 Head commit: {head_sha or "not specified"}
+
+{(
+    "The FULL repository is checked out at the review working directory above. "
+    "Do NOT review from the diff alone. Open and read the changed files in full, "
+    "read the surrounding code, and trace each changed function to its callers and "
+    "callees (use Read/Grep/Glob) so you understand the real control flow and "
+    "invariants. Verify the change against the actual codebase and the EIP specs "
+    "below before reaching a verdict."
+  ) if working_directory else (
+    "The repository is NOT checked out; review from the diff and the EIP specs below. "
+    "Do not waste turns searching the filesystem for source files — they are not present."
+  )}
 
 You must validate whether the changed implementation matches the relevant EIPs/specification for the configured hardfork when one is provided. Flag deviations, missing required behavior, or security-sensitive mismatches with the hardfork spec.
 

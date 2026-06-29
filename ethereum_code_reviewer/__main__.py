@@ -115,6 +115,24 @@ def main():
             "branch": pr.base.ref,
         }
 
+    def checkout_pr(pr) -> Optional[str]:
+        """Clone the PR's head so the agent can read the real repository.
+
+        Returns the worktree path, or None if checkout fails (we then fall back
+        to a diff-only review). The PR head lives on the upstream repo.
+        """
+        upstream = pr.base.repo.full_name
+        repo_url = getattr(pr.base.repo, "clone_url", None) or f"https://github.com/{upstream}.git"
+        data_dir = os.environ.get("REVIEWER_DATA_DIR") or tempfile.mkdtemp(prefix="reviewer-data-")
+        manager = LocalRepositoryManager(reviewer.github_token, data_dir=data_dir)
+        try:
+            worktree_path, head_sha = manager.ensure_pr_checkout(upstream, repo_url, pr.number)
+            print(f"\nChecked out {upstream} PR #{pr.number} @ {head_sha[:7]} for review")
+            return str(worktree_path)
+        except Exception as exc:  # network/permission/etc. — degrade, don't crash
+            print(f"::warning::Could not check out PR source ({exc}); reviewing from the diff only")
+            return None
+
     def emit_report(analysis: Dict[str, object], cost_info: Optional[CostInfo],
                     title: Optional[str] = None, header: Optional[Dict[str, object]] = None) -> None:
         """Render the polished report to the Action log and the job summary."""
@@ -234,6 +252,7 @@ def main():
             analysis, cost_info = reviewer.analyze_security(
                 changes, repo_name=repo_name, agent_file_path=args.agent_file,
                 hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
+                working_directory=checkout_pr(pr),
             )
             header = pr_header(pr, repo_name)
             emit_report(analysis, cost_info, header=header)
@@ -316,6 +335,7 @@ def main():
         analysis, cost_info = reviewer.analyze_security(
             changes, repo_name=repo_name, agent_file_path=args.agent_file,
             hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
+            working_directory=checkout_pr(pr),
         )
         header = pr_header(pr, repo_name)
         emit_report(analysis, cost_info, header=header)

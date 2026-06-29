@@ -97,6 +97,43 @@ class LocalRepositoryManager:
         head_sha = self._run_git(["rev-parse", "HEAD"], cwd=worktree_path)
         return bare_repo_path, worktree_path, head_sha
 
+    def ensure_pr_checkout(self, repo_name: str, repo_url: str, pr_number: int) -> tuple[Path, str]:
+        """Check out a pull request's head so the reviewer can read the real code.
+
+        Fetches ``refs/pull/<n>/head`` (shallow) from the upstream repo into a
+        worktree and returns ``(worktree_path, head_sha)``. The agent runs with
+        this as its working directory, so it can read surrounding source, trace
+        callers/callees, and verify the diff against the actual codebase rather
+        than reasoning from the patch alone.
+        """
+        branch_name = f"pr-{pr_number}"
+        bare_repo_path, worktree_path = self._repo_paths(repo_name, branch_name)
+        bare_repo_path.parent.mkdir(parents=True, exist_ok=True)
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not bare_repo_path.exists():
+            self._run_git(["init", "--bare", str(bare_repo_path)])
+
+        ref = f"refs/remotes/origin/pr/{pr_number}"
+        self._run_git([
+            "--git-dir", str(bare_repo_path),
+            "fetch", "--depth", "1", "--force", repo_url,
+            f"+refs/pull/{pr_number}/head:{ref}",
+        ], repo_url=repo_url)
+
+        if not worktree_path.exists():
+            self._run_git([
+                "--git-dir", str(bare_repo_path),
+                "worktree", "add", "--force", "--detach", str(worktree_path), ref,
+            ])
+        else:
+            self._run_git(["checkout", "--force", "--detach", ref], cwd=worktree_path)
+
+        self._run_git(["reset", "--hard", ref], cwd=worktree_path)
+        self._run_git(["clean", "-fd"], cwd=worktree_path)
+        head_sha = self._run_git(["rev-parse", "HEAD"], cwd=worktree_path)
+        return worktree_path, head_sha
+
     def _build_commit_url(self, repo_name: str, sha: str) -> str:
         return f"https://github.com/{repo_name}/commit/{sha}"
 

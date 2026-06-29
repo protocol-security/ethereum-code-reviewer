@@ -6,6 +6,11 @@ from ethereum_code_reviewer.report import build_review_report, emit_review_repor
 from ethereum_code_reviewer.claude_review import parse_changed_file_ranges, _oneline, _paint_signals
 
 
+def _has_emoji(text):
+    # Any non-ASCII pictographic char (en-dash and accents are fine; emojis aren't).
+    return any(ord(ch) >= 0x2600 for ch in text)
+
+
 def test_parse_changed_file_ranges_reads_hunks():
     diff = (
         "## Changed Files\n\n"
@@ -49,15 +54,16 @@ def test_report_no_confidence_and_fork_aware_header():
     }
     out = build_review_report(analysis, None, header=header)
     assert "[PR #9516: Fix peerless lookup](https://github.com/sigp/lighthouse/pull/9516)" in out
-    assert "🍴 [sigp/lighthouse](https://github.com/sigp/lighthouse)" in out
+    assert "[sigp/lighthouse](https://github.com/sigp/lighthouse)" in out
     assert "protocol-security/lighthouse-ecr-testing" in out  # shown as fork origin
     assert "confidence" not in out.lower()  # confidence fully removed
+    assert not _has_emoji(out)  # no emojis anywhere
 
 
-def test_report_non_fork_repo_has_no_fork_badge():
+def test_report_non_fork_repo_has_no_fork_note():
     out = build_review_report(_analysis(), None, header={"repo": "sigp/lighthouse"})
     assert "[sigp/lighthouse](https://github.com/sigp/lighthouse)" in out
-    assert "🍴" not in out
+    assert "fork:" not in out
 
 
 def test_report_clean_verdict_includes_summary_and_files():
@@ -67,7 +73,7 @@ def test_report_clean_verdict_includes_summary_and_files():
         docs_scope="hardfork:fusaka",
     )
     out = build_review_report(analysis, types.SimpleNamespace(model="claude-opus-4-8"), title="PR #1")
-    assert "✅ **No vulnerabilities detected**" in out
+    assert "**Verdict:** No vulnerabilities detected" in out
     assert "Looks correct against the fork spec." in out  # summary kept even when clean
     assert "`a.rs` — L10–20" in out
     assert "EIP-7594" in out
@@ -80,7 +86,7 @@ def test_report_summary_detail_hides_reasoning_text_but_keeps_tools():
     )
     summary = build_review_report(analysis, None, detail="summary")
     full = build_review_report(analysis, None, detail="full")
-    assert "📄 Read `x.rs`" in summary       # tool calls always shown
+    assert "Read `x.rs`" in summary           # tool calls always shown
     assert "thinking out loud" not in summary  # reasoning text only in full
     assert "thinking out loud" in full
 
@@ -94,9 +100,10 @@ def test_report_renders_findings_with_severity_badge():
         "_reasoning_log": {},
     }
     out = build_review_report(analysis, None)
-    assert "⚠️ **1 potential issue(s) found**" in out
-    assert "🔴 HIGH — panic on None" in out
+    assert "**Verdict:** 1 potential issue(s) found" in out
+    assert "### HIGH — panic on None" in out
     assert "<summary>Raw JSON review</summary>" in out
+    assert not _has_emoji(out)
 
 
 def test_raw_json_is_clean_and_fence_safe():

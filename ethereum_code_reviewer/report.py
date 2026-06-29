@@ -15,8 +15,6 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-SEVERITY_BADGE = {"HIGH": "🔴", "MEDIUM": "🟠", "LOW": "🟡"}
-
 # How much of the agent's activity to render. "summary" keeps it tight;
 # "full" includes every reasoning turn and tool call.
 DETAIL_LEVELS = ("summary", "full")
@@ -29,8 +27,8 @@ def _format_ranges(ranges: List[Tuple[int, int]]) -> str:
 
 def _files_section(analysed_files: List[Dict[str, Any]]) -> List[str]:
     if not analysed_files:
-        return ["## 🔍 Files analysed", "", "_No changed files with line ranges were detected._", ""]
-    lines = ["## 🔍 Files analysed", ""]
+        return ["## Files analysed", "", "_No changed files with line ranges were detected._", ""]
+    lines = ["## Files analysed", ""]
     for entry in analysed_files:
         ranges = [tuple(r) for r in entry.get("ranges", [])]
         suffix = f" — {_format_ranges(ranges)}" if ranges else ""
@@ -49,13 +47,13 @@ def _tool_summary(tool: Dict[str, Any]) -> str:
             loc += f" (L{offset}–{int(offset) + int(limit) - 1})"
         elif offset:
             loc += f" (from L{offset})"
-        return f"📄 Read `{loc}`"
+        return f"Read `{loc}`"
     if name in {"Grep", "Glob"} and (args.get("pattern") or args.get("query")):
-        return f"🔎 {name} `{args.get('pattern') or args.get('query')}`"
+        return f"{name} `{args.get('pattern') or args.get('query')}`"
     if name == "Bash" and args.get("command"):
         cmd = str(args["command"]).splitlines()[0]
-        return f"💻 Bash `{cmd[:80]}`"
-    return f"🔧 {name}"
+        return f"Bash `{cmd[:80]}`"
+    return name
 
 
 def _process_section(transcript: List[Dict[str, Any]], detail: str) -> List[str]:
@@ -66,13 +64,13 @@ def _process_section(transcript: List[Dict[str, Any]], detail: str) -> List[str]
         if detail == "full":
             thinking = (entry.get("thinking") or "").strip()
             if thinking:
-                steps.append(f"💭 {thinking}")
+                steps.append(f"_{thinking}_")
             text = (entry.get("text") or "").strip()
             if text:
-                steps.append(f"🗣️ {text}")
+                steps.append(text)
     if not steps:
         return []
-    lines = ["## 🧠 Review process", ""]
+    lines = ["## Review process", ""]
     lines.extend(f"{i}. {step}" for i, step in enumerate(steps, 1))
     lines.append("")
     return lines
@@ -81,11 +79,10 @@ def _process_section(transcript: List[Dict[str, Any]], detail: str) -> List[str]
 def _findings_section(findings: List[Dict[str, Any]]) -> List[str]:
     if not findings:
         return []
-    lines = ["## 🚨 Findings", ""]
+    lines = ["## Findings", ""]
     for finding in findings:
         severity = finding.get("severity", "?")
-        badge = SEVERITY_BADGE.get(severity, "⚪")
-        lines.append(f"### {badge} {severity} — {finding.get('description', '(no description)')}")
+        lines.append(f"### {severity} — {finding.get('description', '(no description)')}")
         lines.append("")
         if finding.get("detailed_explanation"):
             lines += ["**What it is**", "", finding["detailed_explanation"], ""]
@@ -114,19 +111,19 @@ def _spec_section(log: Dict[str, Any]) -> List[str]:
         parts.append("**EIPs loaded:** " + ", ".join(f"EIP-{n}" for n in fetched))
     missing = manifest.get("missing_eips") or []
     if missing:
-        parts.append("**⚠️ Missing EIPs:** " + ", ".join(f"EIP-{n}" for n in missing))
-    return ["## 📚 Spec context", "", "  \n".join(parts), ""]
+        parts.append("**Missing EIPs:** " + ", ".join(f"EIP-{n}" for n in missing))
+    return ["## Spec context", "", "  \n".join(parts), ""]
 
 
 def _repo_line(header: Dict[str, Any], log: Dict[str, Any]) -> Optional[str]:
-    """Render the repository, showing the upstream with a fork badge if forked."""
+    """Render the repository, noting the fork origin when reviewing a fork's PR."""
     repo = (header or {}).get("repo") or log.get("repo_name")
     if not repo:
         return None
     link = f"[{repo}](https://github.com/{repo})"
     fork_of = (header or {}).get("fork_of")
     if fork_of:
-        return f"**Repository:** 🍴 {link} · _reviewed from fork_ `{fork_of}`"
+        return f"**Repository:** {link} — _fork:_ `{fork_of}`"
     return f"**Repository:** {link}"
 
 
@@ -137,7 +134,16 @@ def _clean_json(analysis: Dict[str, Any]) -> str:
     fences — the model often wraps its JSON in its own ```json block, which would
     collide with ours and break the rendered Markdown.
     """
-    clean = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    clean = {
+        k: v for k, v in analysis.items()
+        if not k.startswith("_") and k != "confidence_score"
+    }
+    # Defensively drop any per-finding confidence the model may still emit.
+    if isinstance(clean.get("findings"), list):
+        clean["findings"] = [
+            {k: v for k, v in f.items() if k != "confidence"} if isinstance(f, dict) else f
+            for f in clean["findings"]
+        ]
     return json.dumps(clean, indent=2, ensure_ascii=False)
 
 
@@ -161,12 +167,12 @@ def build_review_report(
 
     findings = analysis.get("findings") or []
     verdict = (
-        f"⚠️ **{len(findings)} potential issue(s) found**"
+        f"**Verdict:** {len(findings)} potential issue(s) found"
         if analysis.get("has_vulnerabilities")
-        else "✅ **No vulnerabilities detected**"
+        else "**Verdict:** No vulnerabilities detected"
     )
 
-    lines: List[str] = ["# 🛡️ Ethereum Code Review", ""]
+    lines: List[str] = ["# Ethereum Code Review", ""]
 
     head_title = header.get("title") or title
     if head_title:
@@ -186,7 +192,7 @@ def build_review_report(
     lines += ["  \n".join(meta_bits), ""]
 
     summary = (analysis.get("summary") or "").strip()
-    lines += ["## 📋 Summary", "", summary or "_No summary provided._", ""]
+    lines += ["## Summary", "", summary or "_No summary provided._", ""]
 
     lines += _files_section(log.get("analysed_files") or [])
     lines += _spec_section(log)
@@ -223,7 +229,7 @@ def emit_review_report(report: str) -> None:
         try:
             with open(summary_path, "a", encoding="utf-8") as handle:
                 handle.write(report + "\n")
-            print("\n📋 Full review report added to the run's Summary tab.")
+            print("\nFull review report added to the run's Summary tab.")
             return
         except OSError as exc:  # don't fail the review over a summary write
             print(f"::warning::Could not write job summary: {exc}")
