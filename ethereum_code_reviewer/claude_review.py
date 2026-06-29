@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,70 @@ DISALLOWED_TOOLS = [
     "EnterWorktree", "ExitWorktree", "Monitor", "PushNotification",
     "CronCreate", "CronDelete", "CronList", "RemoteTrigger", "Task", "Workflow",
 ]
+
+# --- Live stream rendering (mirrors KAT's stream-json view) ---------------
+# A scannable, colorized live view of the agent as it works: 💭 thinking,
+# 💬 reasoning, 🔧 tool calls (one color per tool), ✅ result. Reproduction/
+# consensus signal words are painted red so the eye catches them.
+_SIGNAL_RE = re.compile(
+    r"(panic|invalid opcode|invalid|fatal|divergen[a-z]*|state.?root|mismatch|"
+    r"consensus|slash|segfault|goroutine|stack trace|fork.?choice|timeout|"
+    r"overflow|underflow|reentran[a-z]*|out.?of.?bounds)",
+    re.IGNORECASE,
+)
+_TOOL_COLORS = {
+    "Bash": "1;32", "Write": "1;33", "Edit": "1;33", "NotebookEdit": "1;33",
+    "Read": "1;34", "Grep": "1;36", "Glob": "1;36",
+    "WebFetch": "1;35", "WebSearch": "1;35",
+}
+_TOOL_FIELDS = ("command", "file_path", "path", "url", "pattern", "query")
+
+
+def _use_color() -> bool:
+    return os.environ.get("NO_COLOR") is None
+
+
+def _c(code: str, text: str) -> str:
+    return text if not _use_color() else f"\x1b[{code}m{text}\x1b[0m"
+
+
+def _oneline(text: str, limit: int) -> str:
+    text = re.sub(r"[\t\r ]*\n[\t\r ]*", " ⏎ ", text or "")
+    text = re.sub(r"[ \t]{2,}", " ", text).strip()
+    return text[:limit] + " …" if len(text) > limit else text
+
+
+def _paint_signals(text: str) -> str:
+    if not _use_color():
+        return text
+    return _SIGNAL_RE.sub(lambda m: _c("1;31", m.group(0)), text)
+
+
+def _tool_summary(tool_input: Dict[str, Any]) -> str:
+    for key in _TOOL_FIELDS:
+        if tool_input.get(key):
+            return str(tool_input[key])
+    return json.dumps(tool_input, default=str)
+
+
+def _print_stream_block(kind: str, payload: Any) -> None:
+    """Print one streamed event, KAT-style, to stderr (flushed for live CI)."""
+    if kind == "thinking":
+        line = _c("2", "💭 " + _oneline(payload, 300))
+    elif kind == "text":
+        line = _c("36", "💬") + "  " + _paint_signals(_oneline(payload, 300))
+    elif kind == "tool":
+        name = payload.get("name", "tool")
+        color = _TOOL_COLORS.get(name, "1;37")
+        line = _c(color, f"🔧 {name}") + "  " + _c("2", _oneline(_tool_summary(payload.get("input") or {}), 240))
+    elif kind == "result":
+        subtype, text = payload
+        ok = subtype in (None, "success")
+        head = _c("1;32" if ok else "1;31", f"✅ {subtype or 'done'}" if ok else f"⚠️ {subtype}")
+        line = head + ": " + _paint_signals(_oneline(text or "", 400))
+    else:
+        return
+    print("\n" + line, file=sys.stderr, flush=True)
 
 
 @dataclass
@@ -114,6 +179,34 @@ def _extract_json_from_response(response_text: str) -> str:
     return response_text[start_idx:]
 
 
+_FILE_HEADER_RE = re.compile(r"^File:\s+(.+)$")
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def parse_changed_file_ranges(code_changes: str) -> List[Dict[str, Any]]:
+    """Parse the review input into a list of changed files with line ranges.
+
+    Reads the ``File: <name>`` blocks produced by ``get_pr_changes`` and the
+    unified-diff ``@@ -a,b +c,d @@`` hunk headers, returning the new-side line
+    ranges per file. Used to show reviewers exactly which lines were in scope.
+    """
+    files: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+    for line in (code_changes or "").splitlines():
+        header = _FILE_HEADER_RE.match(line)
+        if header:
+            current = {"file": header.group(1).strip(), "ranges": []}
+            files.append(current)
+            continue
+        hunk = _HUNK_RE.match(line)
+        if hunk and current is not None:
+            start = int(hunk.group(1))
+            count = int(hunk.group(2)) if hunk.group(2) else 1
+            end = start + max(count, 1) - 1
+            current["ranges"].append((start, end))
+    return [f for f in files if f["ranges"]]
+
+
 def _looks_like_json_review(response_text: str) -> bool:
     """Best-effort check that the response carries a parseable JSON object."""
     if not response_text or not response_text.strip():
@@ -172,6 +265,11 @@ class SecurityReview:
         self.max_thinking_tokens = provider_kwargs.get("max_thinking_tokens", 8000)
         self.default_repo_name = repo_name
         self.override_agent_file_path = agent_file_path
+        # Stream the agent's thinking/tool calls live to the log as it works.
+        # On by default (visibility is the point in CI); set STREAM_REVIEW=0 to mute.
+        self.stream_live = provider_kwargs.get(
+            "stream_live", os.environ.get("STREAM_REVIEW", "1") not in {"0", "false", "no"}
+        )
 
         self.github_token = os.environ.get("INPUT_GITHUB-TOKEN") or os.environ.get("GITHUB_TOKEN")
         self.github = Github(auth=Auth.Token(self.github_token)) if self.github_token else None
@@ -308,16 +406,37 @@ class SecurityReview:
                     serialized = {"type": type(message).__name__}
 
                     if hasattr(message, "content"):
-                        text_blocks = [
-                            block.text for block in message.content if hasattr(block, "text")
-                        ]
+                        text_blocks: List[str] = []
+                        tool_calls: List[Dict[str, Any]] = []
+                        thinking: List[str] = []
+                        for block in message.content:
+                            # Print each block live, in order, as it streams in.
+                            if hasattr(block, "thinking"):
+                                thinking.append(block.thinking)
+                                if self.stream_live:
+                                    _print_stream_block("thinking", block.thinking)
+                            elif hasattr(block, "text"):
+                                text_blocks.append(block.text)
+                                if self.stream_live:
+                                    _print_stream_block("text", block.text)
+                            elif hasattr(block, "name") and hasattr(block, "input"):
+                                call = {"name": block.name, "input": block.input}
+                                tool_calls.append(call)
+                                if self.stream_live:
+                                    _print_stream_block("tool", call)
                         if text_blocks:
                             serialized["text"] = "".join(text_blocks)
                             fragments.append(serialized["text"])
+                        if thinking:
+                            serialized["thinking"] = "\n".join(thinking)
+                        if tool_calls:
+                            serialized["tools"] = tool_calls
 
                     if hasattr(message, "result"):
                         serialized["result"] = message.result
                         result = message.result or result
+                        if self.stream_live:
+                            _print_stream_block("result", (getattr(message, "subtype", None), message.result))
 
                     if hasattr(message, "subtype"):
                         serialized["subtype"] = message.subtype
@@ -458,6 +577,7 @@ Return ONLY a JSON object with this shape:
             "working_directory": working_directory,
             "raw_output": raw_output,
             "transcript": transcript,
+            "analysed_files": parse_changed_file_ranges(code_changes),
             "selected_docs": docs_context.selected_docs,
             "docs_scope": docs_context.scope_description,
             "spec_manifest": docs_context.manifest,

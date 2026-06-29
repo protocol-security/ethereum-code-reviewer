@@ -13,6 +13,7 @@ from typing import Dict, Optional, Tuple
 from .claude_review import SecurityReview, CostInfo
 from .local_repo_manager import LocalRepositoryManager
 from .spec_context import latest_mainnet_hardfork
+from .report import build_review_report, emit_review_report, DETAIL_LEVELS
 
 def parse_pr_url(url: str) -> Tuple[str, int]:
     """
@@ -103,25 +104,12 @@ def main():
         resolved_model = model or os.environ.get('CLAUDE_MODEL') or os.environ.get('INPUT_CLAUDE-MODEL')
         return {'model': resolved_model} if resolved_model else {}
 
-    def print_analysis(analysis: Dict[str, object], cost_info: Optional[CostInfo]) -> None:
-        if analysis['confidence_score'] == 0:
-            print("\n⚠️ Analysis failed or returned unexpected results.")
-            return
-        if analysis['has_vulnerabilities']:
-            print("\n🛡️ Security Review Report")
-            print("Vulnerabilities Detected: Yes")
-            print(f"\nSummary:\n{analysis['summary']}")
-            if cost_info and cost_info.total_cost > 0:
-                print(f"\nCost Information: {cost_info}")
-            if analysis['findings']:
-                print("\nDetailed Findings:")
-                for finding in analysis['findings']:
-                    print(f"\n{finding['severity']} Severity Issue")
-                    print(f"Description: {finding['description']}")
-                    print(f"Recommendation: {finding['recommendation']}")
-                    print(f"Confidence: {finding['confidence']}%")
-        else:
-            print("\n✅ No security vulnerabilities detected in the changed code.")
+    def emit_report(analysis: Dict[str, object], cost_info: Optional[CostInfo],
+                    title: Optional[str] = None) -> None:
+        """Render the polished report to the Action log and the job summary."""
+        emit_review_report(
+            build_review_report(analysis, cost_info, title=title, detail=args.detail)
+        )
 
     try:
         dotenv.load_dotenv()
@@ -151,6 +139,9 @@ def main():
         parser.add_argument('--anthropic-api-key', help='Anthropic API key', default=os.environ.get('ANTHROPIC_API_KEY'))
         parser.add_argument('--model', help='Claude model to use (defaults to CLAUDE_MODEL)')
         parser.add_argument('--post-comment', help='Post analysis as a comment on the PR', action='store_true')
+        parser.add_argument('--detail', choices=DETAIL_LEVELS,
+                            default=os.environ.get('INPUT_DETAIL') or 'summary',
+                            help='How much of the agent\'s activity to render in the report (default: summary)')
         parser.add_argument('--input-text', help='Analyze text input directly and output JSON result', action='store_true')
 
         args = parser.parse_args()
@@ -201,6 +192,11 @@ def main():
             agent_file_path=args.agent_file
         )
 
+        # Treat blank / "none" / "null" (common workflow-input sentinels) as
+        # "no hardfork requested" so the mainnet default below applies.
+        if args.hardfork and args.hardfork.strip().lower() in {"", "none", "null"}:
+            args.hardfork = None
+
         # When no hardfork is requested, scope the review to whatever is live on
         # mainnet today (e.g. Fusaka) rather than leaving it unscoped or picking
         # an upcoming fork. File/text-only modes don't use hardfork context.
@@ -229,6 +225,7 @@ def main():
                 changes, repo_name=repo_name, agent_file_path=args.agent_file,
                 hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
             )
+            emit_report(analysis, cost_info, title=f"PR #{pr.number}: {pr.title or ''}".strip())
             if analysis['has_vulnerabilities']:
                 reviewer.create_report_comment(pr, analysis, cost_info)
                 print(f"::warning::Security vulnerabilities detected with {analysis['confidence_score']}% confidence")
@@ -254,7 +251,7 @@ def main():
                 changes, repo_name=repo_name, agent_file_path=args.agent_file,
                 strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
             )
-            print_analysis(analysis, cost_info)
+            emit_report(analysis, cost_info, title=f"File: {file_path}")
             emit_status(analysis)
             return
 
@@ -271,7 +268,7 @@ def main():
                 args.repository, commit_sha, branch=args.branch,
                 hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
             )
-            print_analysis(analysis, cost_info)
+            emit_report(analysis, cost_info, title=f"Commit {commit_sha[:7]} in {args.repository}")
             emit_status(analysis)
             return
 
@@ -279,7 +276,8 @@ def main():
             target, analysis, cost_info = run_start_commit_review(args, reviewer)
             print(f"\nReviewed {args.repository}@{args.branch}: "
                   f"{args.start_commit[:7]}..{target.head_sha[:7]} ({len(target.scoped_commit_infos)} commit(s))")
-            print_analysis(analysis, cost_info)
+            emit_report(analysis, cost_info,
+                        title=f"{args.repository}@{args.branch}: {args.start_commit[:7]}..{target.head_sha[:7]}")
             emit_status(analysis)
             return
 
@@ -307,10 +305,9 @@ def main():
             changes, repo_name=repo_name, agent_file_path=args.agent_file,
             hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
         )
+        emit_report(analysis, cost_info, title=f"PR #{pr.number}: {pr.title or ''}".strip())
         if args.post_comment and analysis['has_vulnerabilities']:
             reviewer.create_report_comment(pr, analysis, cost_info)
-        else:
-            print_analysis(analysis, cost_info)
         emit_status(analysis)
         return
 

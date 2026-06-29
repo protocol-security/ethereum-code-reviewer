@@ -47,6 +47,14 @@ inputs:
     description: "Fail the run if the hardfork's expected EIPs could not all be fetched"
     required: false
     default: 'false'
+  detail:
+    description: "How much of the agent's activity to render in the report: 'summary' or 'full'"
+    required: false
+    default: 'summary'
+  stream:
+    description: 'Stream the agent\'s thinking/tool calls live to the log as it works'
+    required: false
+    default: 'true'
 runs:
   using: 'docker'
   image: 'Dockerfile'
@@ -65,6 +73,8 @@ runs:
     INPUT_HARDFORK: ${{ inputs.hardfork }}
     INPUT_POST_COMMENT: ${{ inputs.post-comment }}
     INPUT_STRICT_SPECS: ${{ inputs.strict-specs }}
+    INPUT_DETAIL: ${{ inputs.detail }}
+    STREAM_REVIEW: ${{ inputs.stream }}
 branding:
   icon: 'shield'
   color: 'blue'
