@@ -114,6 +114,17 @@ def _extract_json_from_response(response_text: str) -> str:
     return response_text[start_idx:]
 
 
+def _looks_like_json_review(response_text: str) -> bool:
+    """Best-effort check that the response carries a parseable JSON object."""
+    if not response_text or not response_text.strip():
+        return False
+    try:
+        json.loads(_extract_json_from_response(response_text))
+        return True
+    except (ValueError, json.JSONDecodeError):
+        return False
+
+
 def _validate_response(response: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize the review result into the existing app contract."""
     if "has_vulnerabilities" not in response:
@@ -212,6 +223,25 @@ class SecurityReview:
                 changes.append(f"File: {file.filename}\n{file.patch}\n")
         return "\n".join(changes)
 
+    def get_pr_review_input(self, pr: PullRequest) -> str:
+        """Compose the full review material for a PR.
+
+        Includes the PR title and body (the author's description of intent,
+        markdown) followed by the changed files. The body often states what the
+        change is meant to do, which the reviewer needs to judge whether the
+        diff actually does it.
+        """
+        sections = [f"# Pull Request #{pr.number}: {pr.title or '(no title)'}"]
+        body = (pr.body or "").strip()
+        sections.append(
+            f"## PR Description\n\n{body}" if body else "## PR Description\n\n(no description provided)"
+        )
+        changes = self.get_pr_changes(pr)
+        sections.append(
+            f"## Changed Files\n\n{changes}" if changes else "## Changed Files\n\n(no file diffs available)"
+        )
+        return "\n\n".join(sections)
+
     def get_recent_prs(self, repo_name: str, count: int = 10) -> List[PullRequest]:
         if not self.github:
             raise ValueError("GitHub client not initialized")
@@ -253,8 +283,6 @@ class SecurityReview:
             )
 
         transcript: List[Dict[str, Any]] = [{"type": "user_prompt", "text": user_prompt}]
-        final_result = ""
-        text_fragments: List[str] = []
 
         async with ClaudeSDKClient(
             options=ClaudeAgentOptions(
@@ -266,42 +294,64 @@ class SecurityReview:
                 disallowed_tools=DISALLOWED_TOOLS,
             )
         ) as client:
+
+            async def collect_response() -> str:
+                """Drain one query's messages, recording the transcript.
+
+                Returns the final result text (the SDK's terminal result, or the
+                concatenated assistant text if no explicit result was emitted —
+                e.g. when the turn limit is hit mid-exploration).
+                """
+                result = ""
+                fragments: List[str] = []
+                async for message in client.receive_response():
+                    serialized = {"type": type(message).__name__}
+
+                    if hasattr(message, "content"):
+                        text_blocks = [
+                            block.text for block in message.content if hasattr(block, "text")
+                        ]
+                        if text_blocks:
+                            serialized["text"] = "".join(text_blocks)
+                            fragments.append(serialized["text"])
+
+                    if hasattr(message, "result"):
+                        serialized["result"] = message.result
+                        result = message.result or result
+
+                    if hasattr(message, "subtype"):
+                        serialized["subtype"] = message.subtype
+                    if hasattr(message, "session_id"):
+                        serialized["session_id"] = message.session_id
+                    if hasattr(message, "total_cost_usd"):
+                        serialized["total_cost_usd"] = message.total_cost_usd
+                    if hasattr(message, "duration_ms"):
+                        serialized["duration_ms"] = message.duration_ms
+
+                    transcript.append(serialized)
+
+                if not result and fragments:
+                    result = "".join(fragments)
+                return result
+
             await client.query(user_prompt)
+            final_result = await collect_response()
 
-            async for message in client.receive_response():
-                serialized = {"type": type(message).__name__}
+            # The model sometimes ends a turn on prose (a preamble like "I'll
+            # examine the code…") without ever emitting the JSON review — often
+            # because it spent its turns exploring. Ask once more for JSON only.
+            if not _looks_like_json_review(final_result):
+                transcript.append({"type": "retry", "reason": "no_json_in_response"})
+                await client.query(
+                    "Stop. Do not use any tools. Output ONLY the JSON review object "
+                    "described earlier — no prose, no markdown fences — starting with "
+                    "'{' and nothing else."
+                )
+                retry_result = await collect_response()
+                if _looks_like_json_review(retry_result) or not final_result:
+                    final_result = retry_result
 
-                if hasattr(message, "content"):
-                    text_blocks = []
-                    for block in message.content:
-                        if hasattr(block, "text"):
-                            text_blocks.append(block.text)
-                    if text_blocks:
-                        serialized["text"] = "".join(text_blocks)
-                        text_fragments.append(serialized["text"])
-
-                if hasattr(message, "result"):
-                    serialized["result"] = message.result
-                    final_result = message.result or final_result
-
-                if hasattr(message, "subtype"):
-                    serialized["subtype"] = message.subtype
-                if hasattr(message, "session_id"):
-                    serialized["session_id"] = message.session_id
-                if hasattr(message, "total_cost_usd"):
-                    serialized["total_cost_usd"] = message.total_cost_usd
-                if hasattr(message, "duration_ms"):
-                    serialized["duration_ms"] = message.duration_ms
-
-                transcript.append(serialized)
-
-                if not final_result and text_fragments:
-                    final_result = "".join(text_fragments)
-
-        if not final_result and text_fragments:
-            final_result = "".join(text_fragments)
-
-        return final_result.strip(), transcript
+        return (final_result or "").strip(), transcript
 
     def analyze_security(
         self,

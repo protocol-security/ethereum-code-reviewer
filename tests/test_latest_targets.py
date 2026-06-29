@@ -88,3 +88,35 @@ def test_get_latest_open_pr_reads_from_upstream_when_fork():
     fork = _FakeRepo(full_name="me/r", fork=True, source=upstream, open_prs=[])
     r = _reviewer_with_github(_FakeGithub(fork))
     assert r.get_latest_open_pr("me/r").number == 99
+
+
+class _FakePR:
+    def __init__(self, number, title, body, files):
+        self.number = number
+        self.title = title
+        self.body = body
+        self._files = files
+
+    def get_files(self):
+        return self._files
+
+
+def test_get_pr_review_input_includes_title_body_and_diff():
+    pr = _FakePR(
+        7, "Add foo", "This PR implements foo.\nCloses #3",
+        [types.SimpleNamespace(filename="foo.py", patch="@@ -1 +1 @@\n+x = 1")],
+    )
+    r = SecurityReview.__new__(SecurityReview)
+    out = r.get_pr_review_input(pr)
+    assert "Pull Request #7: Add foo" in out
+    assert "This PR implements foo." in out
+    assert "File: foo.py" in out
+    assert "+x = 1" in out
+
+
+def test_get_pr_review_input_handles_empty_body_and_no_files():
+    pr = _FakePR(8, "Empty", None, [])
+    r = SecurityReview.__new__(SecurityReview)
+    out = r.get_pr_review_input(pr)
+    assert "(no description provided)" in out
+    assert "(no file diffs available)" in out

@@ -24,10 +24,12 @@ so "did we get all of <fork>?" has a concrete answer; ``strict=True`` raises
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -38,6 +40,11 @@ import requests
 
 META_INDEX_URL = "https://eips.ethereum.org/meta"
 EIPS_RAW = "https://raw.githubusercontent.com/ethereum/EIPs/master/EIPS/eip-{n}.md"
+# ethpandaops "forks" dashboard embeds a window.__CONFIG__ blob with every
+# network's fork activation timestamps — the canonical source for "what is live
+# on mainnet right now" (the EIP meta index lists future forks but not their
+# mainnet status).
+FORKS_CONFIG_URL = "https://lab.ethpandaops.io/ethereum/forks"
 
 HTTP_TIMEOUT = 10
 DEFAULT_MAX_DOCS = 30
@@ -155,6 +162,50 @@ def resolve_meta_eip(hardfork_name: str) -> Optional[int]:
     if alias and _normalize(alias) in index:
         return index[_normalize(alias)]
     return None
+
+
+@lru_cache(maxsize=1)
+def latest_mainnet_hardfork() -> Optional[str]:
+    """Return the latest hardfork already activated on Ethereum mainnet.
+
+    Reads the ethpandaops forks config and picks the consensus fork whose
+    activation timestamp has passed and is the most recent. This deliberately
+    excludes scheduled-but-not-yet-live forks (e.g. Glamsterdam) so the default
+    review scope matches what mainnet actually runs. Returns ``None`` if the
+    config cannot be read or parsed, so callers can fall back gracefully.
+    """
+    html = _get(FORKS_CONFIG_URL)
+    if not html:
+        return None
+    marker = "window.__CONFIG__ = "
+    start = html.find(marker)
+    if start == -1:
+        _warn("forks config: window.__CONFIG__ not found")
+        return None
+    try:
+        config, _ = json.JSONDecoder().raw_decode(html, start + len(marker))
+    except (json.JSONDecodeError, ValueError) as exc:
+        _warn(f"forks config: parse failed: {exc}")
+        return None
+
+    mainnet = next(
+        (net for net in config.get("networks", []) if net.get("name") == "mainnet"),
+        None,
+    )
+    if not mainnet:
+        _warn("forks config: mainnet network not present")
+        return None
+
+    consensus = mainnet.get("forks", {}).get("consensus", {})
+    now = time.time()
+    activated = [
+        (name, info.get("timestamp"))
+        for name, info in consensus.items()
+        if isinstance(info.get("timestamp"), (int, float)) and info["timestamp"] <= now
+    ]
+    if not activated:
+        return None
+    return max(activated, key=lambda item: item[1])[0]
 
 
 def extract_eip_numbers(text: str) -> List[int]:

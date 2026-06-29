@@ -130,3 +130,41 @@ def test_cache_delta_only_new_eips_downloaded(monkeypatch, tmp_path):
     second = sc.build_review_context("agents/execution-layer/AGENTS.md", "", hardfork_name="fusaka")
     assert second.manifest["downloaded"] == 0
     assert second.manifest["cache_hits"] == 3
+
+
+# Mirrors the window.__CONFIG__ blob embedded in the ethpandaops forks page:
+# mainnet has fulu live and a future fork scheduled past "now".
+FORKS_CONFIG_HTML = """<!doctype html><script>
+window.__CONFIG__ = {"networks":[
+  {"name":"hoodi","forks":{"consensus":{"fulu":{"timestamp":100}}}},
+  {"name":"mainnet","forks":{"consensus":{
+    "deneb":{"timestamp":10},
+    "electra":{"timestamp":20},
+    "fulu":{"timestamp":30},
+    "glamsterdam":{"timestamp":9999999999}
+  }}}
+]};
+</script>"""
+
+
+def _install_forks_config(monkeypatch, html, now):
+    monkeypatch.setattr(sc, "_get", lambda url: html if url == sc.FORKS_CONFIG_URL else None)
+    monkeypatch.setattr(sc.time, "time", lambda: now)
+    sc.latest_mainnet_hardfork.cache_clear()
+
+
+def test_latest_mainnet_hardfork_picks_newest_activated(monkeypatch):
+    # now is past fulu (30) but before glamsterdam (9999999999) -> fulu wins.
+    _install_forks_config(monkeypatch, FORKS_CONFIG_HTML, now=1000)
+    assert sc.latest_mainnet_hardfork() == "fulu"
+
+
+def test_latest_mainnet_hardfork_excludes_future_forks(monkeypatch):
+    # Even once everything but glamsterdam is live, a future fork is never chosen.
+    _install_forks_config(monkeypatch, FORKS_CONFIG_HTML, now=25)
+    assert sc.latest_mainnet_hardfork() == "electra"
+
+
+def test_latest_mainnet_hardfork_none_when_unavailable(monkeypatch):
+    _install_forks_config(monkeypatch, "", now=1000)
+    assert sc.latest_mainnet_hardfork() is None

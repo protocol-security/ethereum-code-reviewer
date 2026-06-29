@@ -12,6 +12,7 @@ import tempfile
 from typing import Dict, Optional, Tuple
 from .claude_review import SecurityReview, CostInfo
 from .local_repo_manager import LocalRepositoryManager
+from .spec_context import latest_mainnet_hardfork
 
 def parse_pr_url(url: str) -> Tuple[str, int]:
     """
@@ -200,6 +201,18 @@ def main():
             agent_file_path=args.agent_file
         )
 
+        # When no hardfork is requested, scope the review to whatever is live on
+        # mainnet today (e.g. Fusaka) rather than leaving it unscoped or picking
+        # an upcoming fork. File/text-only modes don't use hardfork context.
+        if not args.hardfork and not args.file and not args.input_text:
+            default_fork = latest_mainnet_hardfork()
+            if default_fork:
+                args.hardfork = default_fork
+                print(f"\nNo hardfork specified; defaulting to latest mainnet fork: {default_fork}")
+            else:
+                print("\nNo hardfork specified and latest mainnet fork could not be determined; "
+                      "proceeding without hardfork spec context.")
+
         if event_path and args.mode == 'pr' and not args.target:
             require_anthropic_key()
             with open(event_path, 'r') as f:
@@ -211,7 +224,7 @@ def main():
                 )
             repo_name = event['repository']['full_name']
             pr = reviewer.get_pr(repo_name, event['pull_request']['number'])
-            changes = reviewer.get_pr_changes(pr)
+            changes = reviewer.get_pr_review_input(pr)
             analysis, cost_info = reviewer.analyze_security(
                 changes, repo_name=repo_name, agent_file_path=args.agent_file,
                 hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
@@ -289,7 +302,7 @@ def main():
             print(f"\nNo PR given; using the latest open PR #{pr.number}")
         print(f"\nAnalyzing PR #{pr.number}")
         print(f"Repository: {repo_name}")
-        changes = reviewer.get_pr_changes(pr)
+        changes = reviewer.get_pr_review_input(pr)
         analysis, cost_info = reviewer.analyze_security(
             changes, repo_name=repo_name, agent_file_path=args.agent_file,
             hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
