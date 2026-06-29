@@ -3,7 +3,11 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     REVIEWER_DATA_DIR=/tmp/reviewer-data \
     REVIEWER_CACHE_DIR=/tmp/reviewer-specs \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    IS_SANDBOX=1
+# IS_SANDBOX=1 lets `claude --dangerously-skip-permissions` run as root inside
+# this container (the GitHub Actions Docker action runs as root); without it the
+# CLI refuses the flag and every swarm agent exits 1.
 
 # Node provides the `claude` CLI, which we drive directly as a subprocess to run
 # the review swarm (finders/verifiers/synthesis). Copy the prebuilt runtime from

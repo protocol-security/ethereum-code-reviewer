@@ -553,12 +553,16 @@ class SecurityReview:
         budget = os.environ.get("REVIEW_AGENT_BUDGET_USD")
         if budget:
             cmd += ["--max-budget-usd", budget]
+        # IS_SANDBOX=1 lets `--dangerously-skip-permissions` run as root (the Action
+        # runs as root in its container); without it the CLI refuses and exits 1.
+        env = {**os.environ, "IS_SANDBOX": "1"}
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=working_directory or str(REPO_ROOT),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         # Large prompts (the diff + EIP context) go via stdin to avoid ARG_MAX.
         proc.stdin.write(prompt.encode("utf-8"))
