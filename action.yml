@@ -52,7 +52,7 @@ inputs:
     required: false
     default: 'summary'
   stream:
-    description: 'Stream the agent\'s thinking/tool calls live to the log as it works'
+    description: "Stream the agent's thinking/tool calls live to the log as it works"
     required: false
     default: 'true'
 runs:
