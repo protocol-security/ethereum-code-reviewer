@@ -266,47 +266,148 @@ def _json_object(text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-# The swarm's finders. Each is an independent agent with a single, narrow mandate,
-# run in parallel. Splitting the work this way stops any one agent from tunnelling
-# on a pet theory and skipping the obvious stuff (a panic finder WILL report every
-# reachable panic; it has no other job).
-FINDER_SPECS: List[Dict[str, str]] = [
-    {
-        "label": "crash-sweep",
-        "focus": (
-            "Find every way the CHANGED code can crash or abort at runtime. FIRST run "
-            "grep over the changed files for: `panic(`, `todo!`, `unimplemented!`, "
-            "`unreachable!`, `TODO`, `FIXME`, `XXX`, `.unwrap(`, `.expect(`. For EACH "
-            "hit in non-test, runtime-reachable code (an RPC/API handler, validation, "
-            "encoding/decoding, block processing) emit a candidate — a shipped panic/"
-            "stub on a reachable path is a guaranteed crash/DoS. Do NOT excuse it as "
-            "'scaffolding', 'WIP', 'incomplete', or 'intentional'. Also flag reachable "
-            "nil/None dereferences and unchecked indexing/slicing."
-        ),
-    },
-    {
-        "label": "logic",
-        "focus": (
-            "Find logic and concurrency bugs in the CHANGED code: duplication / "
-            "discarded-return bugs (the same call made twice, a result computed then "
-            "thrown away and recomputed), the wrong constant/address/length/variant "
-            "used (copy-paste from a sibling), off-by-one, ignored errors, integer "
-            "overflow/truncation, and data races / missing locks (compare a changed "
-            "method to its siblings — does it take the lock the others take?)."
-        ),
-    },
-    {
-        "label": "spec",
-        "focus": (
-            "Find spec/EIP-conformance defects in the CHANGED code: incorrect gas "
-            "costs or constants, missing or wrong required behavior, wrong fork-gating, "
-            "and deviations from the relevant EIP. Confirm any gas value or constant "
-            "against the actual EIP text (use the spec context, or fetch the EIP) "
-            "before flagging it; do not assert a consensus split you cannot ground in "
-            "the spec."
-        ),
-    },
-]
+# Map source extensions to the client implementation language so the swarm can
+# run a language-SPECIFIC sweep (a go-ethereum diff gets the Go playbook, not a
+# generic union). Test/build files are excluded by the finder itself.
+_EXT_LANG = {
+    ".go": "Go", ".rs": "Rust", ".java": "Java", ".cs": "C#",
+    ".nim": "Nim", ".nims": "Nim", ".ts": "TypeScript", ".mts": "TypeScript",
+    ".js": "TypeScript", ".py": "Python",
+}
+
+# Expert, language-specific crash/abort/unfinished + footgun playbooks. Each is the
+# set a senior reviewer of THAT client would actually grep for. crash-sweep injects
+# only the playbook(s) for the detected language — never the whole union.
+LANGUAGE_PLAYBOOKS: Dict[str, str] = {
+    "Go": (
+        "Go (Geth, Erigon, Prysm). Grep the changed .go files for:\n"
+        "- aborts that kill the process: `panic(`, `log.Crit(` (geth: this calls os.Exit), "
+        "`log.Fatal`, `os.Exit(`, `Must…(` helpers used on request-derived input;\n"
+        "- type assertions `x.(T)` WITHOUT the `, ok` form → panic on the wrong type;\n"
+        "- nil dereferences: a pointer/interface/map that can be nil used without a check; "
+        "writing to a nil map;\n"
+        "- slice/index out of range on attacker-controlled length: `b[i]`, `b[:n]`, "
+        "`binary.BigEndian.Uint64(b)` on a short slice;\n"
+        "- concurrency: a map/slice shared across goroutines without a lock (the runtime "
+        "fatals on concurrent map read/write), a struct containing a `sync.Mutex` copied "
+        "by value, a missing `defer mu.Unlock()`;\n"
+        "- integer truncation/overflow: `int(x)`/`uint64(x)` narrowing, `big.Int.Uint64()` "
+        "on an out-of-range value;\n"
+        "- ignored errors (`_, _ =` / result used before `err` checked)."
+    ),
+    "Rust": (
+        "Rust (Reth, revm, Lighthouse, Grandine). Grep the changed .rs files for:\n"
+        "- aborts on reachable paths: `panic!(`, `.unwrap()`, `.expect(`, `todo!()`, "
+        "`unimplemented!()`, `unreachable!()`, `assert!`/`assert_eq!` (NOT `debug_assert!`, "
+        "which is compiled out in release);\n"
+        "- indexing/slicing panics: `x[i]`, `&x[a..b]` on attacker-controlled bounds;\n"
+        "- arithmetic: `+`/`-`/`*` on gas/balance/length without `checked_`/`saturating_`/"
+        "`wrapping_` (debug panics, release silently wraps), and `as` truncating casts "
+        "(`u64 as usize`, `usize as u32`);\n"
+        "- `unsafe { … }`, `from_raw`, `transmute`, `get_unchecked`;\n"
+        "- `.clone()`-then-mutate aliasing of shared state."
+    ),
+    "Java": (
+        "Java (Besu, Teku). Grep the changed .java files for:\n"
+        "- thrown stubs/aborts: `throw new UnsupportedOperationException`, "
+        "`new NotImplementedException`, `new IllegalStateException`, `new RuntimeException`, "
+        "`System.exit(`;\n"
+        "- NPEs: `Optional.get()` without `isPresent()`, a method that can return null whose "
+        "result is dereferenced, autoboxing of a null `Integer`/`Long`;\n"
+        "- `assert …` used for validation (assertions are OFF without `-ea` in production → "
+        "the check silently does nothing);\n"
+        "- integer overflow (silent wraparound) and narrowing casts `(int)`/`(short)`;\n"
+        "- shared mutable state touched without synchronization / non-thread-safe collections."
+    ),
+    "C#": (
+        "C# (Nethermind). Grep the changed .cs files for:\n"
+        "- thrown stubs/aborts: `throw new NotImplementedException(`, `NotSupportedException(`, "
+        "`InvalidOperationException(`, `Environment.Exit(`, `Environment.FailFast(`;\n"
+        "- null-reference footguns: the null-forgiving `!` operator hiding a real null, "
+        "`.Value` on a `Nullable`/null, a nullable returned and dereferenced;\n"
+        "- `Debug.Assert(` / `Trace.Assert(` used for validation (compiled out in Release);\n"
+        "- `checked`/`unchecked` integer overflow and `(int)`/`(uint)` narrowing casts;\n"
+        "- `Span<T>`/array indexing out of range; async deadlocks via `.Result`/`.Wait()`."
+    ),
+    "Nim": (
+        "Nim (Nimbus). Grep the changed .nim files for:\n"
+        "- `assert` (DISABLED under `-d:release`/`-d:danger` → the check vanishes; "
+        "consensus code must use `doAssert` for invariants);\n"
+        "- aborts: `quit(`, `raise newException(`, unhandled `Defect`;\n"
+        "- `[]` indexing (IndexDefect) and array/seq bounds on untrusted length;\n"
+        "- integer OverflowDefect and `.int`/`.uint64` conversions; `cast[…]`."
+    ),
+    "TypeScript": (
+        "TypeScript (Lodestar). Grep the changed .ts files for:\n"
+        "- aborts: `throw new Error(`, `process.exit(`, `assert(`;\n"
+        "- the non-null `!` assertion and `as any`/`as T` casts hiding `undefined`/wrong types;\n"
+        "- array access returning `undefined` used unchecked;\n"
+        "- use of JS `number` for 64-bit values (slots, gwei, indices) where precision is "
+        "lost above 2^53 — consensus quantities must be `bigint`."
+    ),
+}
+
+# Language-agnostic finders (logic & spec) — these don't need a per-language grep set.
+_FINDER_LOGIC = (
+    "Find logic and concurrency bugs in the CHANGED code: duplication / "
+    "discarded-return bugs (the same call made twice, a result computed then thrown "
+    "away and recomputed), the wrong constant/address/length/variant used (copy-paste "
+    "from a sibling), off-by-one, ignored errors, integer overflow/truncation, and "
+    "data races / missing locks (compare a changed method to its siblings — does it "
+    "take the lock the others take?)."
+)
+_FINDER_SPEC = (
+    "Find spec/EIP-conformance defects in the CHANGED code: incorrect gas costs or "
+    "constants, missing or wrong required behavior, wrong fork-gating, and deviations "
+    "from the relevant EIP. Confirm any gas value or constant against the actual EIP "
+    "text (use the spec context, or fetch the EIP) before flagging it; do not assert a "
+    "consensus split you cannot ground in the spec."
+)
+
+
+def detect_languages(analysed_files: List[Dict[str, Any]]) -> List[str]:
+    """Detect the client's implementation language(s) from the changed files,
+    most-changed first. Ignores docs/config/test-only extensions."""
+    counts: Dict[str, int] = {}
+    for entry in analysed_files:
+        ext = os.path.splitext(entry.get("file", ""))[1].lower()
+        lang = _EXT_LANG.get(ext)
+        if lang:
+            counts[lang] = counts.get(lang, 0) + 1
+    return [lang for lang, _ in sorted(counts.items(), key=lambda kv: -kv[1])]
+
+
+def build_finder_specs(languages: List[str]) -> List[Dict[str, str]]:
+    """Build the swarm's finders, with a crash-sweep specialised to the detected
+    language(s). Each finder is an independent agent with one narrow mandate."""
+    primary = languages[:2]  # the dominant language(s); usually just one
+    playbooks = [LANGUAGE_PLAYBOOKS[l] for l in primary if l in LANGUAGE_PLAYBOOKS]
+    if playbooks:
+        lang_label = "/".join(primary)
+        crash_focus = (
+            f"This client is written in {lang_label}. Run a {lang_label}-SPECIFIC sweep "
+            f"over ONLY the changed files for crashes, aborts, and unfinished stubs:\n\n"
+            + "\n\n".join(playbooks)
+            + "\n\nFor EACH hit in non-test, runtime-reachable code (an RPC/API handler, "
+            "validation, encoding/decoding, block processing) emit a candidate — a shipped "
+            "panic/abort/stub on a reachable path is a guaranteed crash/DoS. Do NOT excuse "
+            "it as 'scaffolding', 'WIP', 'incomplete', or 'intentional'. IGNORE test-only "
+            "code (e.g. *_test.go, files under tests/, `#[test]`)."
+        )
+    else:
+        # Unknown language — fall back to identifying it, then sweeping idiomatically.
+        crash_focus = (
+            "Identify the language of the changed files, then sweep ONLY those files for "
+            "that language's crash/abort/unfinished idioms (process-killing calls, panics/"
+            "exceptions on reachable paths, `TODO`/`FIXME` stubs, unchecked indexing, nil/"
+            "null dereferences). A shipped abort/stub on a reachable path is a crash/DoS; "
+            "do not excuse it as WIP. Ignore test-only code."
+        )
+    return [
+        {"label": "crash-sweep", "focus": crash_focus},
+        {"label": "logic", "focus": _FINDER_LOGIC},
+        {"label": "spec", "focus": _FINDER_SPEC},
+    ]
 
 # A finder lists candidates exhaustively; depth comes later in the verifier.
 _CANDIDATE_SCHEMA = (
@@ -650,11 +751,15 @@ class SecurityReview:
         # without the full diff (which would just bloat every call).
         context_brief = f"{context_header}\n\n{checkout_note}\n\n{policy}\n\n{docs}"
 
+        analysed_files = parse_changed_file_ranges(code_changes)
+        languages = detect_languages(analysed_files)
+
         result = asyncio.run(self._run_audit_pipeline(
             system_prompt=agent_instructions,
             context_block=context_block,
             context_brief=context_brief,
             working_directory=working_directory,
+            languages=languages,
         ))
         transcript = result.pop("_transcript", [])
         swarm_stats = result.pop("_stats", {})
@@ -664,12 +769,13 @@ class SecurityReview:
             "branch_name": branch_name,
             "agent_file_path": resolved_agent_file,
             "hardfork_name": hardfork_name,
+            "languages": languages,
             "baseline_sha": baseline_sha,
             "head_sha": head_sha,
             "working_directory": working_directory,
             "transcript": transcript,
             "swarm_stats": swarm_stats,
-            "analysed_files": parse_changed_file_ranges(code_changes),
+            "analysed_files": analysed_files,
             "selected_docs": docs_context.selected_docs,
             "docs_scope": docs_context.scope_description,
             "spec_manifest": docs_context.manifest,
@@ -695,13 +801,18 @@ class SecurityReview:
         context_block: str,
         context_brief: str,
         working_directory: Optional[str],
+        languages: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Swarm: parallel finders -> per-candidate verifier -> synthesis."""
         transcript: List[Dict[str, Any]] = []
+        finders = build_finder_specs(languages or [])
 
         def note(msg: str) -> None:
             if self.stream_live:
                 print("  " + _c("1;35", "swarm: ") + msg, file=sys.stderr, flush=True)
+
+        if languages:
+            note(f"language(s): {', '.join(languages)}")
 
         # 1) Finders run in parallel, each with a single narrow mandate.
         async def run_finder(spec: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -726,14 +837,14 @@ class SecurityReview:
             return out
 
         finder_results = await asyncio.gather(
-            *[run_finder(s) for s in FINDER_SPECS], return_exceptions=True
+            *[run_finder(s) for s in finders], return_exceptions=True
         )
         candidates: List[Dict[str, Any]] = []
         for r in finder_results:
             if isinstance(r, list):
                 candidates.extend(r)
         candidates = _dedupe_candidates(candidates)
-        note(f"{len(candidates)} candidate(s) from {len(FINDER_SPECS)} finders")
+        note(f"{len(candidates)} candidate(s) from {len(finders)} finders")
 
         # 2) Verify each candidate independently (parallel, bounded).
         MAX_VERIFY = 24

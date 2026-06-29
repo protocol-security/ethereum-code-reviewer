@@ -4,7 +4,8 @@ import asyncio
 import json
 
 from ethereum_code_reviewer.claude_review import (
-    SecurityReview, _dedupe_candidates, _json_object, FINDER_SPECS,
+    SecurityReview, _dedupe_candidates, _json_object,
+    detect_languages, build_finder_specs,
 )
 
 
@@ -66,11 +67,35 @@ def test_dedupe_candidates_by_location_and_title():
     assert {c["location"] for c in out} == {"a.go:10", "b.go:20"}
 
 
-def test_finder_specs_cover_the_three_classes():
-    labels = {f["label"] for f in FINDER_SPECS}
-    assert labels == {"crash-sweep", "logic", "spec"}
-    for f in FINDER_SPECS:
-        assert f["focus"].strip()
+def test_detect_languages_from_changed_files():
+    files = [
+        {"file": "core/state/statedb.go"}, {"file": "eth/api.go"},
+        {"file": "README.md"}, {"file": "crates/x/foo.rs"},
+    ]
+    # Go has 2 files, Rust 1 -> Go is primary; markdown ignored.
+    assert detect_languages(files) == ["Go", "Rust"]
+    assert detect_languages([{"file": "x.txt"}]) == []
+
+
+def test_build_finder_specs_is_language_specific():
+    specs = build_finder_specs(["Go"])
+    assert [s["label"] for s in specs] == ["crash-sweep", "logic", "spec"]
+    crash = next(s for s in specs if s["label"] == "crash-sweep")["focus"]
+    # Go playbook injected (geth-specific), Rust idioms NOT dumped in
+    assert "log.Crit" in crash
+    assert "written in Go" in crash
+    assert "unwrap()" not in crash and "todo!()" not in crash
+
+
+def test_build_finder_specs_rust_gets_rust_playbook():
+    crash = next(s for s in build_finder_specs(["Rust"]) if s["label"] == "crash-sweep")["focus"]
+    assert "unwrap()" in crash and "checked_" in crash
+    assert "log.Crit" not in crash  # not Go's
+
+
+def test_build_finder_specs_unknown_language_falls_back():
+    crash = next(s for s in build_finder_specs([]) if s["label"] == "crash-sweep")["focus"]
+    assert "Identify the language" in crash
 
 
 def test_pipeline_finders_to_verify_to_synthesis():
