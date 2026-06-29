@@ -37,6 +37,13 @@ def _blob_url(repo: Optional[str], commit: Optional[str], path: str,
     return url
 
 
+def _collapsible(summary: str, body: List[str]) -> List[str]:
+    """Wrap body lines in a collapsed <details> arrow. Empty body -> nothing."""
+    if not body:
+        return []
+    return ["<details>", f"<summary>{summary}</summary>", ""] + body + ["</details>", ""]
+
+
 def _link_location(loc: str, repo: Optional[str], commit: Optional[str]) -> str:
     """Render a `file:line` location as a clickable link when we can build one."""
     loc = loc.strip()
@@ -60,8 +67,8 @@ def _code_fence(code: str) -> List[str]:
 def _files_section(analysed_files: List[Dict[str, Any]],
                    repo: Optional[str] = None, commit: Optional[str] = None) -> List[str]:
     if not analysed_files:
-        return ["## Files analysed", "", "_No changed files with line ranges were detected._", ""]
-    lines = ["## Files analysed", ""]
+        return []
+    bullets = []
     for entry in analysed_files:
         path = entry["file"]
         ranges = [tuple(r) for r in entry.get("ranges", [])]
@@ -73,11 +80,10 @@ def _files_section(analysed_files: List[Dict[str, Any]],
                 label = f"L{start}" if start == end else f"L{start}–{end}"
                 rurl = _blob_url(repo, commit, path, start, end)
                 chunks.append(f"[{label}]({rurl})" if rurl else label)
-            lines.append(f"- {name} — {', '.join(chunks)}")
+            bullets.append(f"- {name} — {', '.join(chunks)}")
         else:
-            lines.append(f"- {name}")
-    lines.append("")
-    return lines
+            bullets.append(f"- {name}")
+    return _collapsible(f"Files analysed ({len(analysed_files)})", bullets)
 
 
 def _tool_summary(tool: Dict[str, Any]) -> str:
@@ -113,10 +119,8 @@ def _process_section(transcript: List[Dict[str, Any]], detail: str) -> List[str]
                 steps.append(text)
     if not steps:
         return []
-    lines = ["## Review process", ""]
-    lines.extend(f"{i}. {step}" for i, step in enumerate(steps, 1))
-    lines.append("")
-    return lines
+    body = [f"{i}. {step}" for i, step in enumerate(steps, 1)]
+    return _collapsible(f"Review process ({len(steps)} steps)", body)
 
 
 SEVERITY_BADGE = {"HIGH": "🔴", "MEDIUM": "🟠", "LOW": "🟢"}
