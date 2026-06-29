@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,11 +22,10 @@ from .commit_monitor import CommitMonitor
 from .spec_context import ReviewContextResult, build_review_context
 from .review_types import CommitInfo
 
-try:
-    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
-except ImportError:
-    ClaudeSDKClient = None
-    ClaudeAgentOptions = None
+# We drive the `claude` CLI (the same binary the Agent SDK wraps) directly as a
+# subprocess so we can run a *swarm* of independent agents — several finders in
+# parallel, a verifier per candidate, then synthesis — each its own process.
+CLAUDE_CLI = os.environ.get("CLAUDE_CLI_PATH") or shutil.which("claude") or "claude"
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -85,15 +85,16 @@ def _tool_summary(tool_input: Dict[str, Any]) -> str:
     return json.dumps(tool_input, default=str)
 
 
-def _print_stream_block(kind: str, payload: Any) -> None:
+def _print_stream_block(kind: str, payload: Any, label: Optional[str] = None) -> None:
     """Print one streamed event to stderr (flushed, colorized for live CI)."""
+    tag = _c("35", f"[{label}] ") if label else ""
     if kind == "thinking":
         if not (payload or "").strip():
             return  # skip empty/redacted thinking blocks
         # Thinking is the reasoning the user wants to watch — give it room and
         # keep its paragraph breaks (indented) rather than clipping to one line.
         body = "\n".join("  " + ln for ln in payload.strip().splitlines())
-        line = _c("2", "  thinking:\n" + body)
+        line = tag + _c("2", "thinking:\n" + body)
     elif kind == "text":
         # Don't echo the final JSON answer — it's noise in the log (and may carry
         # fields we don't surface, like a volunteered confidence score). It is
@@ -101,20 +102,20 @@ def _print_stream_block(kind: str, payload: Any) -> None:
         stripped = (payload or "").strip()
         if not stripped or _looks_like_json_review(stripped) or stripped.startswith("{"):
             return
-        line = _c("36", "  reasoning: ") + _paint_signals(_oneline(payload, 300))
+        line = tag + _c("36", "reasoning: ") + _paint_signals(_oneline(payload, 300))
     elif kind == "tool":
         name = payload.get("name", "tool")
         color = _TOOL_COLORS.get(name, "1;37")
-        line = _c(color, f"  {name}") + "  " + _c("2", _oneline(_tool_summary(payload.get("input") or {}), 240))
+        line = tag + _c(color, name) + "  " + _c("2", _oneline(_tool_summary(payload.get("input") or {}), 240))
     elif kind == "result":
         # Don't echo the result body — it just repeats the last assistant text.
         subtype = payload
         ok = subtype in (None, "success")
-        line = _c("1;32" if ok else "1;31",
-                  "  review complete" if ok else f"  ended: {subtype}")
+        line = tag + _c("1;32" if ok else "1;31",
+                        "done" if ok else f"ended: {subtype}")
     else:
         return
-    print(line, file=sys.stderr, flush=True)
+    print("  " + line, file=sys.stderr, flush=True)
 
 
 @dataclass
@@ -256,6 +257,117 @@ def build_storage_metadata(cost_info: Optional[CostInfo], extra: Optional[Dict[s
     return metadata
 
 
+def _json_object(text: str) -> Optional[Dict[str, Any]]:
+    """Parse a JSON object out of an agent's final text, or None."""
+    try:
+        obj = json.loads(_extract_json_from_response(text))
+        return obj if isinstance(obj, dict) else None
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+
+# The swarm's finders. Each is an independent agent with a single, narrow mandate,
+# run in parallel. Splitting the work this way stops any one agent from tunnelling
+# on a pet theory and skipping the obvious stuff (a panic finder WILL report every
+# reachable panic; it has no other job).
+FINDER_SPECS: List[Dict[str, str]] = [
+    {
+        "label": "crash-sweep",
+        "focus": (
+            "Find every way the CHANGED code can crash or abort at runtime. FIRST run "
+            "grep over the changed files for: `panic(`, `todo!`, `unimplemented!`, "
+            "`unreachable!`, `TODO`, `FIXME`, `XXX`, `.unwrap(`, `.expect(`. For EACH "
+            "hit in non-test, runtime-reachable code (an RPC/API handler, validation, "
+            "encoding/decoding, block processing) emit a candidate — a shipped panic/"
+            "stub on a reachable path is a guaranteed crash/DoS. Do NOT excuse it as "
+            "'scaffolding', 'WIP', 'incomplete', or 'intentional'. Also flag reachable "
+            "nil/None dereferences and unchecked indexing/slicing."
+        ),
+    },
+    {
+        "label": "logic",
+        "focus": (
+            "Find logic and concurrency bugs in the CHANGED code: duplication / "
+            "discarded-return bugs (the same call made twice, a result computed then "
+            "thrown away and recomputed), the wrong constant/address/length/variant "
+            "used (copy-paste from a sibling), off-by-one, ignored errors, integer "
+            "overflow/truncation, and data races / missing locks (compare a changed "
+            "method to its siblings — does it take the lock the others take?)."
+        ),
+    },
+    {
+        "label": "spec",
+        "focus": (
+            "Find spec/EIP-conformance defects in the CHANGED code: incorrect gas "
+            "costs or constants, missing or wrong required behavior, wrong fork-gating, "
+            "and deviations from the relevant EIP. Confirm any gas value or constant "
+            "against the actual EIP text (use the spec context, or fetch the EIP) "
+            "before flagging it; do not assert a consensus split you cannot ground in "
+            "the spec."
+        ),
+    },
+]
+
+# A finder lists candidates exhaustively; depth comes later in the verifier.
+_CANDIDATE_SCHEMA = (
+    '{"candidates":[{"severity":"HIGH|MEDIUM|LOW","title":"<concise headline>",'
+    '"location":"<path:line>","description":"<1-2 sentences>"}]}'
+)
+# The verifier independently confirms or rejects one candidate.
+_VERDICT_SCHEMA = (
+    '{"confirmed":true_or_false,"reason":"<why confirmed or rejected>",'
+    '"severity":"HIGH|MEDIUM|LOW","title":"<headline>","location":"<path:line>",'
+    '"description":"<1-2 sentence summary>","recommendation":"<1 sentence fix>",'
+    '"detailed_explanation":"<the mechanism, in depth>","impact":"<what can happen>",'
+    '"detailed_recommendation":"<how to fix, in depth>",'
+    '"code_example":"<optional unified-diff patch>","references":"<optional EIP/spec>"}'
+)
+# Synthesis writes only the prose; the findings list comes from verified verdicts.
+_SYNTHESIS_SCHEMA = (
+    '{"summary":"<2-4 sentence verdict>","analysis":"<Markdown: what the change does '
+    'and how it was reviewed>","spec_compliance":"<EIP conformance note, or '
+    '\'Not spec-relevant\'>"}'
+)
+
+
+# Shared policy every swarm member sees (scope, verification discipline, formatting).
+_REVIEW_POLICY = """REVIEW POLICY
+You are reviewing THIS pull request's changes for concrete security vulnerabilities
+AND spec/EIP-conformance defects. Center on the changed code; a genuine issue in the
+code the change touches or sits among is good to surface too — don't chase unrelated
+problems far from the PR.
+
+VERIFICATION:
+- A CODE DEFECT confirmable from the source alone (a reachable panic/TODO-stub, a
+  double call, a missing lock, a wrong constant) — confirm it in the code and report
+  it. Do NOT withhold an obviously-real code bug, and do NOT excuse a shipped panic/
+  stub as "scaffolding", "WIP", or "intentional".
+- A SPEC/IMPACT claim ("chain split", "consensus divergence", a gas/constant mismatch)
+  requires confirming the governing EIP. Fetch/read the EIP; if you cannot confirm the
+  requirement, downgrade to the impact you can prove or omit it. Never assert a
+  consensus split you have not grounded in the spec.
+Never surface a hedged, unconfirmed guess. Base every claim on the actual code you read.
+
+FORMATTING: write prose in GitHub-flavored Markdown; wrap code identifiers (functions,
+types, variants, fields, paths) in backticks; reference files and line numbers."""
+
+
+def _dedupe_candidates(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop duplicate candidates surfaced by more than one finder."""
+    seen = set()
+    unique = []
+    for c in candidates:
+        key = (
+            (c.get("location") or "").strip().lower(),
+            (c.get("title") or c.get("description") or "").strip().lower()[:80],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(c)
+    return unique
+
+
 class SecurityReview:
     """Claude-only security review entrypoint."""
 
@@ -267,10 +379,6 @@ class SecurityReview:
     ):
         provider_kwargs = provider_kwargs or {}
         self.model = provider_kwargs.get("model") or os.environ.get("CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
-        self.max_turns = provider_kwargs.get(
-            "max_turns", int(os.environ.get("REVIEW_MAX_TURNS", "40"))
-        )
-        self.max_thinking_tokens = provider_kwargs.get("max_thinking_tokens", 12000)
         self.default_repo_name = repo_name
         self.override_agent_file_path = agent_file_path
         # Stream the agent's thinking/tool calls live to the log as it works.
@@ -377,116 +485,115 @@ class SecurityReview:
         decoded_content = file_content.decoded_content.decode("utf-8")
         return f"File: {file_path}\n\n{decoded_content}"
 
-    async def _run_claude_review(
+    def _consume_stream_event(
+        self, event: Dict[str, Any], transcript: List[Dict[str, Any]], label: Optional[str]
+    ) -> str:
+        """Process one `--output-format stream-json` event. Returns result text if any."""
+        etype = event.get("type")
+        if etype == "assistant":
+            blocks = (event.get("message") or {}).get("content") or []
+            text_parts: List[str] = []
+            tools: List[Dict[str, Any]] = []
+            thinking: List[str] = []
+            for block in blocks:
+                bt = block.get("type")
+                if bt == "thinking":
+                    thinking.append(block.get("thinking", ""))
+                    if self.stream_live:
+                        _print_stream_block("thinking", block.get("thinking", ""), label)
+                elif bt == "text":
+                    text_parts.append(block.get("text", ""))
+                    if self.stream_live:
+                        _print_stream_block("text", block.get("text", ""), label)
+                elif bt == "tool_use":
+                    call = {"name": block.get("name", "tool"), "input": block.get("input") or {}}
+                    tools.append(call)
+                    if self.stream_live:
+                        _print_stream_block("tool", call, label)
+            rec: Dict[str, Any] = {"type": "assistant"}
+            if text_parts:
+                rec["text"] = "".join(text_parts)
+            if thinking:
+                rec["thinking"] = "\n".join(thinking)
+            if tools:
+                rec["tools"] = tools
+            transcript.append(rec)
+            return ""
+        if etype == "result":
+            subtype = event.get("subtype")
+            transcript.append({"type": "result", "subtype": subtype})
+            if self.stream_live:
+                _print_stream_block("result", subtype, label)
+            return event.get("result") or ""
+        return ""
+
+    async def _run_cli_agent(
         self,
+        *,
         system_prompt: str,
-        user_prompt: str,
+        prompt: str,
         working_directory: Optional[str] = None,
+        label: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
-        if ClaudeSDKClient is None or ClaudeAgentOptions is None:
-            raise RuntimeError(
-                "claude-agent-sdk is not installed. Install the Python package and the @anthropic-ai/claude-code CLI."
-            )
+        """Run one `claude` CLI agent to completion, streaming stream-json.
 
-        transcript: List[Dict[str, Any]] = [{"type": "user_prompt", "text": user_prompt}]
+        Each call is its own subprocess — one member of the swarm. Returns the
+        agent's final result text and a transcript of its thinking/tools.
+        """
+        cmd = [
+            CLAUDE_CLI, "-p",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--model", self.model,
+            "--append-system-prompt", system_prompt,
+            "--dangerously-skip-permissions",
+            "--disallowedTools", ",".join(DISALLOWED_TOOLS),
+        ]
+        # Bound per-agent spend when configured (the CLI no longer takes --max-turns).
+        budget = os.environ.get("REVIEW_AGENT_BUDGET_USD")
+        if budget:
+            cmd += ["--max-budget-usd", budget]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=working_directory or str(REPO_ROOT),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        # Large prompts (the diff + EIP context) go via stdin to avoid ARG_MAX.
+        proc.stdin.write(prompt.encode("utf-8"))
+        await proc.stdin.drain()
+        proc.stdin.close()
 
-        async with ClaudeSDKClient(
-            options=ClaudeAgentOptions(
-                system_prompt=system_prompt,
-                model=self.model,
-                max_turns=self.max_turns,
-                max_thinking_tokens=self.max_thinking_tokens,
-                # Surface the model's reasoning: "summarized" returns visible
-                # thinking text. Without this, thinking blocks come back omitted
-                # (empty) and the live "thinking:" lines are blank.
-                thinking={
-                    "type": "enabled",
-                    "budget_tokens": self.max_thinking_tokens,
-                    "display": "summarized",
-                },
-                cwd=working_directory or str(REPO_ROOT),
-                disallowed_tools=DISALLOWED_TOOLS,
-            )
-        ) as client:
+        transcript: List[Dict[str, Any]] = [{"type": "prompt", "label": label}]
+        final_text = ""
+        while True:
+            raw = await proc.stdout.readline()
+            if not raw:
+                break
+            line = raw.decode("utf-8", "replace").strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            text = self._consume_stream_event(event, transcript, label)
+            if text:
+                final_text = text
 
-            async def collect_response() -> str:
-                """Drain one query's messages, recording the transcript.
-
-                Returns the final result text (the SDK's terminal result, or the
-                concatenated assistant text if no explicit result was emitted —
-                e.g. when the turn limit is hit mid-exploration).
-                """
-                result = ""
-                fragments: List[str] = []
-                async for message in client.receive_response():
-                    serialized = {"type": type(message).__name__}
-
-                    if hasattr(message, "content"):
-                        text_blocks: List[str] = []
-                        tool_calls: List[Dict[str, Any]] = []
-                        thinking: List[str] = []
-                        for block in message.content:
-                            # Print each block live, in order, as it streams in.
-                            if hasattr(block, "thinking"):
-                                thinking.append(block.thinking)
-                                if self.stream_live:
-                                    _print_stream_block("thinking", block.thinking)
-                            elif hasattr(block, "text"):
-                                text_blocks.append(block.text)
-                                if self.stream_live:
-                                    _print_stream_block("text", block.text)
-                            elif hasattr(block, "name") and hasattr(block, "input"):
-                                call = {"name": block.name, "input": block.input}
-                                tool_calls.append(call)
-                                if self.stream_live:
-                                    _print_stream_block("tool", call)
-                        if text_blocks:
-                            serialized["text"] = "".join(text_blocks)
-                            fragments.append(serialized["text"])
-                        if thinking:
-                            serialized["thinking"] = "\n".join(thinking)
-                        if tool_calls:
-                            serialized["tools"] = tool_calls
-
-                    if hasattr(message, "result"):
-                        serialized["result"] = message.result
-                        result = message.result or result
-                        if self.stream_live:
-                            _print_stream_block("result", getattr(message, "subtype", None))
-
-                    if hasattr(message, "subtype"):
-                        serialized["subtype"] = message.subtype
-                    if hasattr(message, "session_id"):
-                        serialized["session_id"] = message.session_id
-                    if hasattr(message, "total_cost_usd"):
-                        serialized["total_cost_usd"] = message.total_cost_usd
-                    if hasattr(message, "duration_ms"):
-                        serialized["duration_ms"] = message.duration_ms
-
-                    transcript.append(serialized)
-
-                if not result and fragments:
-                    result = "".join(fragments)
-                return result
-
-            await client.query(user_prompt)
-            final_result = await collect_response()
-
-            # The model sometimes ends a turn on prose (a preamble like "I'll
-            # examine the code…") without ever emitting the JSON review — often
-            # because it spent its turns exploring. Ask once more for JSON only.
-            if not _looks_like_json_review(final_result):
-                transcript.append({"type": "retry", "reason": "no_json_in_response"})
-                await client.query(
-                    "Stop. Do not use any tools. Output ONLY the JSON review object "
-                    "described earlier — no prose, no markdown fences — starting with "
-                    "'{' and nothing else."
-                )
-                retry_result = await collect_response()
-                if _looks_like_json_review(retry_result) or not final_result:
-                    final_result = retry_result
-
-        return (final_result or "").strip(), transcript
+        await proc.wait()
+        if not final_text:
+            # No terminal result (e.g. turn limit) — fall back to assistant text.
+            final_text = " ".join(
+                r.get("text", "") for r in transcript
+                if r.get("type") == "assistant" and r.get("text")
+            ).strip()
+        if not final_text and proc.returncode not in (0, None):
+            err = (await proc.stderr.read()).decode("utf-8", "replace").strip()
+            transcript.append({"type": "error", "returncode": proc.returncode, "stderr": err[:2000]})
+            print(f"::warning::[{label or 'agent'}] claude CLI exited {proc.returncode}: {err[:500]}")
+        return final_text.strip(), transcript
 
     def analyze_security(
         self,
@@ -515,125 +622,38 @@ class SecurityReview:
             strict=strict_specs,
         )
 
-        user_prompt = f"""Review the following changed code for concrete security vulnerabilities AND spec/EIP-conformance defects (incorrect gas costs/constants, missing or wrong required behavior, deviations from the relevant EIP).
-
-Repository: {resolved_repo_name or "unknown"}
-Branch: {branch_name or "unknown"}
-Selected agent file: {resolved_agent_file}
-Review working directory: {working_directory or "not provided"}
-Configured hardfork: {hardfork_name or "not specified"}
-Starting commit: {baseline_sha or "latest commit only"}
-Head commit: {head_sha or "not specified"}
-
-{(
-    "The FULL repository is checked out at the review working directory above. "
-    "Do NOT review from the diff alone. Open and read the changed files in full, "
-    "read the surrounding code, and trace each changed function to its callers and "
-    "callees (use Read/Grep/Glob) so you understand the real control flow and "
-    "invariants. Verify the change against the actual codebase and the EIP specs "
-    "below before reaching a verdict."
-  ) if working_directory else (
-    "The repository is NOT checked out; review from the diff and the EIP specs below. "
-    "Do not waste turns searching the filesystem for source files — they are not present."
-  )}
-
-You must validate whether the changed implementation matches the relevant EIPs/specification for the configured hardfork when one is provided. Flag deviations, missing required behavior, or security-sensitive mismatches with the hardfork spec.
-
-METHOD — be BROAD before deep. Do not tunnel on a single theory.
-1. First, sweep EVERY changed file for concrete, spec-INDEPENDENT defects that you
-   can confirm from the code alone. These are the highest-value, highest-confidence
-   findings and need no EIP:
-   - `panic(...)`, `todo!()`, `unimplemented!()`, `TODO`/`FIXME`, `unwrap()`/
-     `expect()`/unchecked indexing on reachable input → crash/DoS;
-   - copy-paste and duplication bugs (a value computed then discarded, the wrong
-     constant/address/length used, a double call that clobbers the first);
-   - missing locks / data races (compare a method to its siblings — does it take the
-     lock the others take?), nil/None dereferences, off-by-one, ignored errors,
-     integer overflow/truncation.
-   Grep for these patterns in the changed files; reading the diff is not enough.
-2. Enumerate ALL candidate issues across ALL changed files. Do NOT stop at the
-   first or "best" one — list every plausible defect, then verify each.
-3. Only after the broad sweep, go deep on spec/EIP conformance for the change.
-
-SCOPE — center on THIS PR's changes; a genuine issue in the code the change
-touches or sits among is good to surface too. Don't chase unrelated problems far
-from the PR.
-
-VERIFICATION — two kinds of findings, verified differently:
-- A CODE DEFECT confirmable from the source alone (a panic in a reachable path, a
-  double call, a missing lock, a wrong constant you can read) — confirm it in the
-  code and REPORT it. Do not withhold an obviously-real code bug because a spec is
-  unavailable.
-- A SPEC/IMPACT claim — especially "chain split", "consensus divergence", or a gas/
-  constant mismatch — requires confirming the governing EIP. Fetch/read the EIP; if
-  you cannot confirm the requirement, either downgrade the finding to the impact you
-  CAN prove (e.g. an internal inconsistency) or omit it. Never assert a consensus
-  split you have not grounded in the spec.
-Never surface a hedged, unconfirmed observation. Each finding states how you
-verified it. Base every claim on the actual code you read, not the diff alone.
-
-Write all prose fields in GitHub-flavored Markdown. ALWAYS wrap code identifiers
-— function names, type names, variants, fields, paths, e.g. `is_awaiting_event()`,
-`DataRequest::WaitingForBlock` — in backticks so they render as inline code. Use
-short paragraphs and bullet lists; reference files and line numbers you inspected.
-
-Return ONLY a JSON object with this shape:
-{{
-  "has_vulnerabilities": <true/false>,
-  "summary": "<2-4 sentence verdict: what the change does and why it is or isn't safe>",
-  "analysis": "<the core of the review, in Markdown. Explain: (1) what the changed code actually does, (2) the control flow you traced through the real source — the functions, call sites, and invariants you checked and what they guarantee, (3) the security reasoning that leads to your verdict (why each potential failure mode is or isn't reachable). Cite the files/lines you read.>",
-  "spec_compliance": "<how the change relates to the relevant EIP(s)/hardfork spec: cite EIP numbers and the specific requirement, and state whether the implementation matches it. Write 'Not spec-relevant' if the change does not touch consensus/spec-governed behavior.>",
-  "findings": [
-    {{
-      "severity": "HIGH|MEDIUM|LOW",
-      "title": "<concise one-line headline — no file paths or line numbers>",
-      "location": "<primary site as path:line, e.g. crates/precompile/src/foo.rs:24>",
-      "description": "<1-2 sentence summary of the issue (shown at the top)>",
-      "recommendation": "<1 sentence summary of the fix (shown at the top)>",
-      "detailed_explanation": "<what the issue is, in depth — the mechanism and why it's a bug>",
-      "impact": "<what can happen — chain split, DoS, fund loss, etc.>",
-      "detailed_recommendation": "<how to fix it, in depth>",
-      "code_example": "<optional minimal patch as a unified diff (lines prefixed - / +)>",
-      "references": "<optional EIP/spec references>"
-    }}
-  ]
-}}
-
-{docs_context.text if docs_context.text else ""}
-
-# Code Changes
-
-{code_changes}
-"""
-
-        raw_output, transcript = asyncio.run(
-            self._run_claude_review(
-                agent_instructions,
-                user_prompt,
-                working_directory=working_directory,
-            )
+        context_header = (
+            f"Repository: {resolved_repo_name or 'unknown'}\n"
+            f"Branch: {branch_name or 'unknown'}\n"
+            f"Configured hardfork: {hardfork_name or 'not specified'}\n"
+            f"Head commit: {head_sha or 'not specified'}\n"
+            f"Working directory: {working_directory or 'not provided'}"
         )
-        try:
-            cleaned_json = _extract_json_from_response(raw_output)
-            result = json.loads(cleaned_json)
-            result = _validate_response(result)
-        except (ValueError, json.JSONDecodeError) as exc:
-            # The Claude Code SDK returned something that isn't the expected JSON
-            # (often an auth/startup error, a refusal, or prose). Surface it so the
-            # failure is diagnosable instead of a bare "Expecting value" traceback.
-            snippet = (raw_output or "").strip()
-            print(
-                "[claude_review] Could not parse a JSON review from the model.\n"
-                f"  model: {self.model}\n"
-                f"  raw response length: {len(raw_output or '')} chars\n"
-                f"  raw response (first 2000 chars): {snippet[:2000] or '<empty>'}",
-                file=sys.stderr,
-            )
-            raise ValueError(
-                "Claude did not return a parseable JSON review "
-                f"({exc}). See the raw response logged above — an empty/short "
-                "response usually means a Claude auth or model error."
-            ) from exc
+        checkout_note = (
+            "The FULL repository is checked out at the working directory above. Open and "
+            "read the changed files and the surrounding code (Read/Grep/Glob/Bash) and "
+            "trace control flow through the real source — do not review from the diff alone."
+            if working_directory else
+            "The repository is NOT checked out; review from the diff and the EIP specs below. "
+            "Do not search the filesystem for source files — they are not present."
+        )
+        policy = _REVIEW_POLICY
+        docs = docs_context.text or ""
+        context_block = (
+            f"{context_header}\n\n{checkout_note}\n\n{policy}\n\n{docs}\n\n# Code Changes\n\n{code_changes}"
+        )
+        # Verifier/synthesis read files directly, so they get the policy + context
+        # without the full diff (which would just bloat every call).
+        context_brief = f"{context_header}\n\n{checkout_note}\n\n{policy}\n\n{docs}"
+
+        result = asyncio.run(self._run_audit_pipeline(
+            system_prompt=agent_instructions,
+            context_block=context_block,
+            context_brief=context_brief,
+            working_directory=working_directory,
+        ))
+        transcript = result.pop("_transcript", [])
+        swarm_stats = result.pop("_stats", {})
 
         reasoning_log = {
             "repo_name": resolved_repo_name,
@@ -643,8 +663,8 @@ Return ONLY a JSON object with this shape:
             "baseline_sha": baseline_sha,
             "head_sha": head_sha,
             "working_directory": working_directory,
-            "raw_output": raw_output,
             "transcript": transcript,
+            "swarm_stats": swarm_stats,
             "analysed_files": parse_changed_file_ranges(code_changes),
             "selected_docs": docs_context.selected_docs,
             "docs_scope": docs_context.scope_description,
@@ -660,9 +680,129 @@ Return ONLY a JSON object with this shape:
             input_tokens=0,
             output_tokens=0,
             model=self.model,
-            provider="claude-agent-sdk",
+            provider="claude-cli-swarm",
             metadata={"reasoning_log": reasoning_log},
         )
+
+    async def _run_audit_pipeline(
+        self,
+        *,
+        system_prompt: str,
+        context_block: str,
+        context_brief: str,
+        working_directory: Optional[str],
+    ) -> Dict[str, Any]:
+        """Swarm: parallel finders -> per-candidate verifier -> synthesis."""
+        transcript: List[Dict[str, Any]] = []
+
+        def note(msg: str) -> None:
+            if self.stream_live:
+                print("  " + _c("1;35", "swarm: ") + msg, file=sys.stderr, flush=True)
+
+        # 1) Finders run in parallel, each with a single narrow mandate.
+        async def run_finder(spec: Dict[str, str]) -> List[Dict[str, Any]]:
+            prompt = (
+                f"{context_block}\n\n## YOUR TASK — {spec['label']} finder\n{spec['focus']}\n\n"
+                f"Enumerate EVERY candidate of this kind across the changed files. Be "
+                f"exhaustive; do not verify in depth yet — a later pass verifies each. "
+                f"Output ONLY this JSON (no prose, no code fences):\n{_CANDIDATE_SCHEMA}\n"
+                f'If there are none, output {{"candidates":[]}}.'
+            )
+            text, tr = await self._run_cli_agent(
+                system_prompt=system_prompt, prompt=prompt,
+                working_directory=working_directory, label=spec["label"],
+            )
+            transcript.extend(tr)
+            obj = _json_object(text) or {}
+            out = []
+            for c in (obj.get("candidates") or []):
+                if isinstance(c, dict):
+                    c["finder"] = spec["label"]
+                    out.append(c)
+            return out
+
+        finder_results = await asyncio.gather(
+            *[run_finder(s) for s in FINDER_SPECS], return_exceptions=True
+        )
+        candidates: List[Dict[str, Any]] = []
+        for r in finder_results:
+            if isinstance(r, list):
+                candidates.extend(r)
+        candidates = _dedupe_candidates(candidates)
+        note(f"{len(candidates)} candidate(s) from {len(FINDER_SPECS)} finders")
+
+        # 2) Verify each candidate independently (parallel, bounded).
+        MAX_VERIFY = 24
+        to_verify = candidates[:MAX_VERIFY]
+        if len(candidates) > MAX_VERIFY:
+            print(f"::warning::swarm: {len(candidates)} candidates; verifying first {MAX_VERIFY}")
+        sem = asyncio.Semaphore(4)
+
+        async def verify(cand: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
+            async with sem:
+                prompt = (
+                    f"{context_brief}\n\n## YOUR TASK — verifier\n"
+                    f"A prior finder flagged this CANDIDATE:\n{json.dumps(cand, ensure_ascii=False)}\n\n"
+                    f"Independently VERIFY it against the ACTUAL code — read the files and trace "
+                    f"the path. Confirm ONLY if it is a real, reachable defect. For any chain-split/"
+                    f"consensus/gas claim, confirm the governing EIP or downgrade to the impact you "
+                    f"can prove; reject what you cannot confirm. Output ONLY this JSON:\n{_VERDICT_SCHEMA}"
+                )
+                text, tr = await self._run_cli_agent(
+                    system_prompt=system_prompt, prompt=prompt,
+                    working_directory=working_directory, label=f"verify#{index + 1}",
+                )
+                transcript.extend(tr)
+                return _json_object(text)
+
+        verdicts = await asyncio.gather(
+            *[verify(c, i) for i, c in enumerate(to_verify)], return_exceptions=True
+        )
+        confirmed: List[Dict[str, Any]] = []
+        for v in verdicts:
+            if isinstance(v, dict) and v.get("confirmed"):
+                v.pop("confirmed", None)
+                v.pop("reason", None)
+                confirmed.append(v)
+        confirmed = _dedupe_candidates(confirmed)
+        note(f"{len(confirmed)} confirmed finding(s)")
+
+        # 3) Synthesis writes the prose; findings come straight from the verdicts.
+        findings_brief = [
+            {k: f.get(k) for k in ("severity", "title", "location", "description")}
+            for f in confirmed
+        ]
+        synth_prompt = (
+            f"{context_brief}\n\n## YOUR TASK — synthesis\n"
+            f"These findings were independently verified and confirmed:\n"
+            f"{json.dumps(findings_brief, ensure_ascii=False)}\n\n"
+            f"Write the review's prose for a maintainer (Markdown, backtick code identifiers). "
+            f"Output ONLY this JSON:\n{_SYNTHESIS_SCHEMA}"
+        )
+        synth_text, synth_tr = await self._run_cli_agent(
+            system_prompt=system_prompt, prompt=synth_prompt,
+            working_directory=working_directory, label="synthesis",
+        )
+        transcript.extend(synth_tr)
+        synth = _json_object(synth_text) or {}
+
+        default_summary = (
+            f"{len(confirmed)} issue(s) found and verified." if confirmed
+            else "No vulnerabilities identified in the changed code."
+        )
+        return {
+            "has_vulnerabilities": bool(confirmed),
+            "summary": (synth.get("summary") or "").strip() or default_summary,
+            "analysis": (synth.get("analysis") or "").strip(),
+            "spec_compliance": (synth.get("spec_compliance") or "").strip(),
+            "findings": confirmed,
+            "_transcript": transcript,
+            "_stats": {
+                "candidates": len(candidates),
+                "verified": len(to_verify),
+                "confirmed": len(confirmed),
+            },
+        }
 
     def analyze_commit(
         self,

@@ -5,10 +5,11 @@ ENV PYTHONUNBUFFERED=1 \
     REVIEWER_CACHE_DIR=/tmp/reviewer-specs \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Node drives the `claude` CLI that claude-agent-sdk runs as a subprocess. Copy
-# the prebuilt runtime from the official image instead of the slow NodeSource
-# apt setup (curl | bash + a second apt run). uv installs Python deps far faster
-# than pip. git is needed for PR/commit clones.
+# Node provides the `claude` CLI, which we drive directly as a subprocess to run
+# the review swarm (finders/verifiers/synthesis). Copy the prebuilt runtime from
+# the official image instead of the slow NodeSource apt setup (curl | bash + a
+# second apt run). uv installs Python deps far faster than pip. git is needed for
+# PR/commit clones.
 COPY --from=node:20-slim /usr/local/bin/node /usr/local/bin/node
 COPY --from=node:20-slim /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

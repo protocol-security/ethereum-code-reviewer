@@ -113,6 +113,15 @@ miss because the code that's present looks correct. Explicitly check for:
   access.
 
 ## How to review
+- **Sweep first, deep-dive second.** Before any subtle spec analysis, grep the
+  changed files for `panic(`, `todo!`, `unimplemented!`, `TODO`, `FIXME`,
+  `.unwrap(`, `.expect(`. A panic/TODO-stub that ships on a runtime-reachable path
+  (RPC/API, validation, encoding, block processing) is a crash/DoS finding — report
+  it. NEVER excuse it as "scaffolding", "WIP", "incomplete", or "intentional". Also
+  scan each hunk for duplication/discarded-return bugs (a call made twice, a result
+  recomputed), missing locks vs sibling methods, nil derefs, off-by-one.
+- Enumerate every concrete defect across all changed files before going deep; don't
+  tunnel on one spec theory or let it displace the concrete findings.
 - Center the review on the PR's changes. If, while reading the code the change
   touches or sits near, you find a genuine issue, it is good to surface it too.
 - Double-check every issue before reporting it: trace the real code path and
