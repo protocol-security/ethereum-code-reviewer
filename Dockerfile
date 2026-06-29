@@ -2,21 +2,27 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     REVIEWER_DATA_DIR=/tmp/reviewer-data \
-    REVIEWER_CACHE_DIR=/tmp/reviewer-specs
+    REVIEWER_CACHE_DIR=/tmp/reviewer-specs \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# git: for start-commit clones. node + @anthropic-ai/claude-code: required by the
-# claude-code-sdk Python package, which drives the `claude` CLI as a subprocess.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git curl ca-certificates gnupg \
- && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
- && apt-get install -y --no-install-recommends nodejs \
+# Node drives the `claude` CLI that claude-agent-sdk runs as a subprocess. Copy
+# the prebuilt runtime from the official image instead of the slow NodeSource
+# apt setup (curl | bash + a second apt run). uv installs Python deps far faster
+# than pip. git is needed for PR/commit clones.
+COPY --from=node:20-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:20-slim /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
  && npm install -g @anthropic-ai/claude-code \
- && apt-get purge -y --auto-remove curl gnupg \
- && apt-get clean && rm -rf /var/lib/apt/lists/*
+ && npm cache clean --force
 
 WORKDIR /app
 COPY . .
-RUN pip install --no-cache-dir . \
+RUN uv pip install --system --no-cache . \
  && chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]

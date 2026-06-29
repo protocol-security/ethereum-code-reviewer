@@ -515,7 +515,7 @@ class SecurityReview:
             strict=strict_specs,
         )
 
-        user_prompt = f"""Review the following changed code for concrete security vulnerabilities.
+        user_prompt = f"""Review the following changed code for concrete security vulnerabilities AND spec/EIP-conformance defects (incorrect gas costs/constants, missing or wrong required behavior, deviations from the relevant EIP).
 
 Repository: {resolved_repo_name or "unknown"}
 Branch: {branch_name or "unknown"}
@@ -538,6 +538,19 @@ Head commit: {head_sha or "not specified"}
   )}
 
 You must validate whether the changed implementation matches the relevant EIPs/specification for the configured hardfork when one is provided. Flag deviations, missing required behavior, or security-sensitive mismatches with the hardfork spec.
+
+SCOPE & VERIFICATION — center the review on THIS PR's changes. If, while reading
+the code the change touches or sits among (its functions, constants, and call
+sites), you find a genuine vulnerability or spec deviation nearby, it is good to
+surface it: say clearly that there is an issue and where. Don't chase unrelated
+problems far from the PR.
+
+But EVERY issue you report — in the diff or nearby — must be DOUBLE-CHECKED, not
+guessed. Never surface a hedged, unconfirmed observation. Verify the facts
+first: trace the real code path, and confirm any spec value (e.g. an EIP gas
+constant) against the actual EIP text — use the spec context below, or fetch the
+EIP if it isn't provided — before claiming a deviation. If you cannot confirm a
+claim, do not report it. Each finding must state how you verified it.
 
 Base every claim on the actual code you read, not the diff alone. Your verdict
 must be backed by reasoning a maintainer can follow and check.
