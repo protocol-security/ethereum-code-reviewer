@@ -119,6 +119,9 @@ def _process_section(transcript: List[Dict[str, Any]], detail: str) -> List[str]
     return lines
 
 
+SEVERITY_BADGE = {"HIGH": "🔴", "MEDIUM": "🟠", "LOW": "🟢"}
+
+
 def _findings_section(findings: List[Dict[str, Any]],
                       repo: Optional[str] = None, commit: Optional[str] = None) -> List[str]:
     if not findings:
@@ -126,26 +129,39 @@ def _findings_section(findings: List[Dict[str, Any]],
     lines = ["## Findings", ""]
     for finding in findings:
         severity = finding.get("severity", "?")
-        body = (finding.get("detailed_explanation") or finding.get("description") or "").strip()
-        lines.append(f"### {severity} — {_short_title(finding, body)}")
+        badge = SEVERITY_BADGE.get(severity, "⚪")
+        # Concise top: badge + title, location, one-line description and fix.
+        summary = (finding.get("description") or "").strip()
+        lines.append(f"### {badge} {severity} — {_short_title(finding, summary)}")
         lines.append("")
         location = (finding.get("location") or "").strip()
         if location:
             lines += [f"**Location:** {_link_location(location, repo, commit)}", ""]
-        if body:
-            lines += [body, ""]
+        if summary:
+            lines += [summary, ""]
+        recommendation = (finding.get("recommendation") or "").strip()
+        if recommendation:
+            lines += [f"**Recommendation:** {recommendation}", ""]
+
+        # Everything detailed goes in a collapsible block to keep the page scannable.
+        detail: List[str] = []
+        what = (finding.get("detailed_explanation") or "").strip()
+        if what:
+            detail += ["**What is the issue?**", "", what, ""]
         impact = (finding.get("impact") or finding.get("impact_explanation") or "").strip()
         if impact:
-            lines += ["**Impact**", "", impact, ""]
-        recommendation = (finding.get("recommendation") or finding.get("detailed_recommendation") or "").strip()
-        if recommendation:
-            lines += ["**Recommendation**", "", recommendation, ""]
+            detail += ["**What can happen?**", "", impact, ""]
+        how = (finding.get("detailed_recommendation") or "").strip()
+        if how:
+            detail += ["**How to fix it?**", "", how, ""]
         code = (finding.get("code_example") or "").strip()
         if code:
-            lines += _code_fence(code)
+            detail += ["**Code**", ""] + _code_fence(code)
         refs = (finding.get("references") or finding.get("additional_resources") or "").strip()
         if refs:
-            lines += [f"**References:** {refs}", ""]
+            detail += [f"**References:** {refs}", ""]
+        if detail:
+            lines += ["<details>", "<summary>Details</summary>", ""] + detail + ["</details>", ""]
     return lines
 
 

@@ -539,21 +539,38 @@ Head commit: {head_sha or "not specified"}
 
 You must validate whether the changed implementation matches the relevant EIPs/specification for the configured hardfork when one is provided. Flag deviations, missing required behavior, or security-sensitive mismatches with the hardfork spec.
 
-SCOPE & VERIFICATION — center the review on THIS PR's changes. If, while reading
-the code the change touches or sits among (its functions, constants, and call
-sites), you find a genuine vulnerability or spec deviation nearby, it is good to
-surface it: say clearly that there is an issue and where. Don't chase unrelated
-problems far from the PR.
+METHOD — be BROAD before deep. Do not tunnel on a single theory.
+1. First, sweep EVERY changed file for concrete, spec-INDEPENDENT defects that you
+   can confirm from the code alone. These are the highest-value, highest-confidence
+   findings and need no EIP:
+   - `panic(...)`, `todo!()`, `unimplemented!()`, `TODO`/`FIXME`, `unwrap()`/
+     `expect()`/unchecked indexing on reachable input → crash/DoS;
+   - copy-paste and duplication bugs (a value computed then discarded, the wrong
+     constant/address/length used, a double call that clobbers the first);
+   - missing locks / data races (compare a method to its siblings — does it take the
+     lock the others take?), nil/None dereferences, off-by-one, ignored errors,
+     integer overflow/truncation.
+   Grep for these patterns in the changed files; reading the diff is not enough.
+2. Enumerate ALL candidate issues across ALL changed files. Do NOT stop at the
+   first or "best" one — list every plausible defect, then verify each.
+3. Only after the broad sweep, go deep on spec/EIP conformance for the change.
 
-But EVERY issue you report — in the diff or nearby — must be DOUBLE-CHECKED, not
-guessed. Never surface a hedged, unconfirmed observation. Verify the facts
-first: trace the real code path, and confirm any spec value (e.g. an EIP gas
-constant) against the actual EIP text — use the spec context below, or fetch the
-EIP if it isn't provided — before claiming a deviation. If you cannot confirm a
-claim, do not report it. Each finding must state how you verified it.
+SCOPE — center on THIS PR's changes; a genuine issue in the code the change
+touches or sits among is good to surface too. Don't chase unrelated problems far
+from the PR.
 
-Base every claim on the actual code you read, not the diff alone. Your verdict
-must be backed by reasoning a maintainer can follow and check.
+VERIFICATION — two kinds of findings, verified differently:
+- A CODE DEFECT confirmable from the source alone (a panic in a reachable path, a
+  double call, a missing lock, a wrong constant you can read) — confirm it in the
+  code and REPORT it. Do not withhold an obviously-real code bug because a spec is
+  unavailable.
+- A SPEC/IMPACT claim — especially "chain split", "consensus divergence", or a gas/
+  constant mismatch — requires confirming the governing EIP. Fetch/read the EIP; if
+  you cannot confirm the requirement, either downgrade the finding to the impact you
+  CAN prove (e.g. an internal inconsistency) or omit it. Never assert a consensus
+  split you have not grounded in the spec.
+Never surface a hedged, unconfirmed observation. Each finding states how you
+verified it. Base every claim on the actual code you read, not the diff alone.
 
 Write all prose fields in GitHub-flavored Markdown. ALWAYS wrap code identifiers
 — function names, type names, variants, fields, paths, e.g. `is_awaiting_event()`,
@@ -571,9 +588,11 @@ Return ONLY a JSON object with this shape:
       "severity": "HIGH|MEDIUM|LOW",
       "title": "<concise one-line headline — no file paths or line numbers>",
       "location": "<primary site as path:line, e.g. crates/precompile/src/foo.rs:24>",
-      "description": "<what the issue is and the reasoning behind it, Markdown>",
+      "description": "<1-2 sentence summary of the issue (shown at the top)>",
+      "recommendation": "<1 sentence summary of the fix (shown at the top)>",
+      "detailed_explanation": "<what the issue is, in depth — the mechanism and why it's a bug>",
       "impact": "<what can happen — chain split, DoS, fund loss, etc.>",
-      "recommendation": "<how to fix it>",
+      "detailed_recommendation": "<how to fix it, in depth>",
       "code_example": "<optional minimal patch as a unified diff (lines prefixed - / +)>",
       "references": "<optional EIP/spec references>"
     }}

@@ -129,9 +129,8 @@ def test_report_renders_findings_with_severity_badge():
     }
     out = build_review_report(analysis, None)
     assert "**Verdict:** 1 potential issue(s) found" in out
-    assert "### HIGH — panic on None" in out
+    assert "### 🔴 HIGH — panic on None" in out  # red circle for HIGH
     assert "<summary>Raw JSON review</summary>" in out
-    assert not _has_emoji(out)
 
 
 def test_finding_location_links_to_upstream_and_diff_fence():
@@ -154,8 +153,11 @@ def test_finding_location_links_to_upstream_and_diff_fence():
     assert "https://github.com/sigp/lighthouse/blob/abc123/crates/precompile/src/bls12_381_const.rs#L24" in out
     # patch rendered as a diff
     assert "```diff" in out
+    # detailed sections collapsed for readability
+    assert "<summary>Details</summary>" in out
+    assert "**What can happen?**" in out
     # long description is NOT the heading
-    assert "### HIGH — wrong gas constant" in out
+    assert "### 🔴 HIGH — wrong gas constant" in out
 
 
 def test_files_analysed_link_to_upstream_lines():
@@ -173,8 +175,8 @@ def test_long_finding_title_is_truncated_not_dumped_in_heading():
         "_reasoning_log": {},
     }
     out = build_review_report(analysis, None)
-    heading = next(ln for ln in out.splitlines() if ln.startswith("### HIGH"))
-    assert len(heading) <= 110  # short, not the whole multi-sentence body
+    heading = next(ln for ln in out.splitlines() if ln.startswith("### 🔴"))
+    assert len(heading) <= 115  # short, not the whole multi-sentence body
 
 
 def test_raw_json_is_clean_and_fence_safe():
