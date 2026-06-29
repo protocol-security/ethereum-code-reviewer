@@ -123,8 +123,8 @@ def test_report_renders_findings_with_severity_badge():
     analysis = {
         "has_vulnerabilities": True,
         "summary": "One issue.",
-        "findings": [{"severity": "HIGH", "description": "panic on None",
-                      "recommendation": "return Err"}],
+        "findings": [{"severity": "HIGH", "title": "panic on None",
+                      "description": "It unwraps.", "recommendation": "return Err"}],
         "_reasoning_log": {},
     }
     out = build_review_report(analysis, None)
@@ -132,6 +132,49 @@ def test_report_renders_findings_with_severity_badge():
     assert "### HIGH — panic on None" in out
     assert "<summary>Raw JSON review</summary>" in out
     assert not _has_emoji(out)
+
+
+def test_finding_location_links_to_upstream_and_diff_fence():
+    analysis = {
+        "has_vulnerabilities": True, "summary": "x",
+        "findings": [{
+            "severity": "HIGH", "title": "wrong gas constant",
+            "location": "crates/precompile/src/bls12_381_const.rs:24",
+            "description": "The constant is hex.", "impact": "chain split",
+            "recommendation": "use decimal",
+            "code_example": "-const X: u64 = 0x23800;\n+const X: u64 = 23800;",
+            "references": "EIP-2537",
+        }],
+        "_reasoning_log": {},
+    }
+    header = {"repo": "sigp/lighthouse", "commit": "abc123"}
+    out = build_review_report(analysis, None, header=header)
+    # location is a clickable blob link at the reviewed commit, anchored to the line
+    assert "[`crates/precompile/src/bls12_381_const.rs:24`]" in out
+    assert "https://github.com/sigp/lighthouse/blob/abc123/crates/precompile/src/bls12_381_const.rs#L24" in out
+    # patch rendered as a diff
+    assert "```diff" in out
+    # long description is NOT the heading
+    assert "### HIGH — wrong gas constant" in out
+
+
+def test_files_analysed_link_to_upstream_lines():
+    analysis = _analysis(analysed_files=[{"file": "a/b.rs", "ranges": [(10, 20)]}])
+    out = build_review_report(analysis, None, header={"repo": "o/r", "commit": "deadbeef"})
+    assert "[`a/b.rs`](https://github.com/o/r/blob/deadbeef/a/b.rs)" in out
+    assert "[L10–20](https://github.com/o/r/blob/deadbeef/a/b.rs#L10-L20)" in out
+
+
+def test_long_finding_title_is_truncated_not_dumped_in_heading():
+    long_desc = "MAP_FP2_TO_G2_BASE_GAS_FEE is 0x23800 instead of 23800. " * 5
+    analysis = {
+        "has_vulnerabilities": True, "summary": "x",
+        "findings": [{"severity": "HIGH", "description": long_desc}],
+        "_reasoning_log": {},
+    }
+    out = build_review_report(analysis, None)
+    heading = next(ln for ln in out.splitlines() if ln.startswith("### HIGH"))
+    assert len(heading) <= 110  # short, not the whole multi-sentence body
 
 
 def test_raw_json_is_clean_and_fence_safe():

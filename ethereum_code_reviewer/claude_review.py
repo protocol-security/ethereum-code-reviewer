@@ -569,13 +569,13 @@ Return ONLY a JSON object with this shape:
   "findings": [
     {{
       "severity": "HIGH|MEDIUM|LOW",
-      "description": "<specific vulnerability with exact location>",
-      "recommendation": "<precise fix>",
-      "detailed_explanation": "<what the issue is>",
-      "impact_explanation": "<what can happen>",
-      "detailed_recommendation": "<how to fix it>",
-      "code_example": "<example patch or code excerpt>",
-      "additional_resources": "<optional references>"
+      "title": "<concise one-line headline — no file paths or line numbers>",
+      "location": "<primary site as path:line, e.g. crates/precompile/src/foo.rs:24>",
+      "description": "<what the issue is and the reasoning behind it, Markdown>",
+      "impact": "<what can happen — chain split, DoS, fund loss, etc.>",
+      "recommendation": "<how to fix it>",
+      "code_example": "<optional minimal patch as a unified diff (lines prefixed - / +)>",
+      "references": "<optional EIP/spec references>"
     }}
   ]
 }}

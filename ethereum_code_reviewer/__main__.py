@@ -113,6 +113,9 @@ def main():
             "repo": upstream,
             "fork_of": configured_repo if configured_repo != upstream else None,
             "branch": pr.base.ref,
+            # The PR head commit — GitHub serves blob links for it under the base
+            # repo, so findings/files can link to the exact reviewed source.
+            "commit": getattr(getattr(pr, "head", None), "sha", None),
         }
 
     def checkout_pr(pr) -> Optional[str]:

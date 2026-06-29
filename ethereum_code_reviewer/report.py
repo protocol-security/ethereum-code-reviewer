@@ -13,26 +13,69 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 # How much of the agent's activity to render. "summary" keeps it tight;
 # "full" includes every reasoning turn and tool call.
 DETAIL_LEVELS = ("summary", "full")
 
-
-def _format_ranges(ranges: List[Tuple[int, int]]) -> str:
-    parts = [f"L{s}" if s == e else f"L{s}–{e}" for s, e in ranges]
-    return ", ".join(parts)
+# "path/to/file.rs:24" or ":19,45" or ":19-45" — captures path + first line.
+_LOC_RE = re.compile(r"^(.+?):(\d+)(?:[-,]\d+)*$")
 
 
-def _files_section(analysed_files: List[Dict[str, Any]]) -> List[str]:
+def _blob_url(repo: Optional[str], commit: Optional[str], path: str,
+              start: Optional[int] = None, end: Optional[int] = None) -> Optional[str]:
+    """Build a GitHub blob link to the upstream repo at the reviewed commit."""
+    if not (repo and commit and path):
+        return None
+    url = f"https://github.com/{repo}/blob/{commit}/{path.lstrip('/')}"
+    if start and end and end != start:
+        url += f"#L{start}-L{end}"
+    elif start:
+        url += f"#L{start}"
+    return url
+
+
+def _link_location(loc: str, repo: Optional[str], commit: Optional[str]) -> str:
+    """Render a `file:line` location as a clickable link when we can build one."""
+    loc = loc.strip()
+    match = _LOC_RE.match(loc)
+    if match:
+        url = _blob_url(repo, commit, match.group(1), int(match.group(2)))
+        if url:
+            return f"[`{loc}`]({url})"
+    return f"`{loc}`"
+
+
+def _code_fence(code: str) -> List[str]:
+    """Fence a code/patch block, using ```diff when it looks like a diff."""
+    looks_diff = any(
+        ln[:1] in "+-" and not ln.startswith(("+++", "---"))
+        for ln in code.splitlines()
+    )
+    return [f"```{'diff' if looks_diff else ''}", code, "```", ""]
+
+
+def _files_section(analysed_files: List[Dict[str, Any]],
+                   repo: Optional[str] = None, commit: Optional[str] = None) -> List[str]:
     if not analysed_files:
         return ["## Files analysed", "", "_No changed files with line ranges were detected._", ""]
     lines = ["## Files analysed", ""]
     for entry in analysed_files:
+        path = entry["file"]
         ranges = [tuple(r) for r in entry.get("ranges", [])]
-        suffix = f" — {_format_ranges(ranges)}" if ranges else ""
-        lines.append(f"- `{entry['file']}`{suffix}")
+        file_url = _blob_url(repo, commit, path)
+        name = f"[`{path}`]({file_url})" if file_url else f"`{path}`"
+        if ranges:
+            chunks = []
+            for start, end in ranges:
+                label = f"L{start}" if start == end else f"L{start}–{end}"
+                rurl = _blob_url(repo, commit, path, start, end)
+                chunks.append(f"[{label}]({rurl})" if rurl else label)
+            lines.append(f"- {name} — {', '.join(chunks)}")
+        else:
+            lines.append(f"- {name}")
     lines.append("")
     return lines
 
@@ -76,26 +119,43 @@ def _process_section(transcript: List[Dict[str, Any]], detail: str) -> List[str]
     return lines
 
 
-def _findings_section(findings: List[Dict[str, Any]]) -> List[str]:
+def _findings_section(findings: List[Dict[str, Any]],
+                      repo: Optional[str] = None, commit: Optional[str] = None) -> List[str]:
     if not findings:
         return []
     lines = ["## Findings", ""]
     for finding in findings:
         severity = finding.get("severity", "?")
-        lines.append(f"### {severity} — {finding.get('description', '(no description)')}")
+        body = (finding.get("detailed_explanation") or finding.get("description") or "").strip()
+        lines.append(f"### {severity} — {_short_title(finding, body)}")
         lines.append("")
-        if finding.get("detailed_explanation"):
-            lines += ["**What it is**", "", finding["detailed_explanation"], ""]
-        if finding.get("impact_explanation"):
-            lines += ["**Impact**", "", finding["impact_explanation"], ""]
-        recommendation = finding.get("detailed_recommendation") or finding.get("recommendation")
+        location = (finding.get("location") or "").strip()
+        if location:
+            lines += [f"**Location:** {_link_location(location, repo, commit)}", ""]
+        if body:
+            lines += [body, ""]
+        impact = (finding.get("impact") or finding.get("impact_explanation") or "").strip()
+        if impact:
+            lines += ["**Impact**", "", impact, ""]
+        recommendation = (finding.get("recommendation") or finding.get("detailed_recommendation") or "").strip()
         if recommendation:
             lines += ["**Recommendation**", "", recommendation, ""]
-        if finding.get("code_example"):
-            lines += ["```", finding["code_example"], "```", ""]
-        if finding.get("additional_resources"):
-            lines += [f"_References: {finding['additional_resources']}_", ""]
+        code = (finding.get("code_example") or "").strip()
+        if code:
+            lines += _code_fence(code)
+        refs = (finding.get("references") or finding.get("additional_resources") or "").strip()
+        if refs:
+            lines += [f"**References:** {refs}", ""]
     return lines
+
+
+def _short_title(finding: Dict[str, Any], body: str) -> str:
+    """A concise heading for a finding — never the whole multi-sentence body."""
+    title = (finding.get("title") or "").strip()
+    if not title:
+        # Derive from the first sentence/line of the body, capped.
+        title = (body.split(". ")[0].splitlines() or ["issue"])[0].strip() or "issue"
+    return title if len(title) <= 100 else title[:99].rstrip() + "…"
 
 
 def _spec_section(log: Dict[str, Any]) -> List[str]:
@@ -164,6 +224,9 @@ def build_review_report(
     detail = detail if detail in DETAIL_LEVELS else "summary"
     header = header or ({"title": title} if title else {})
     log: Dict[str, Any] = analysis.get("_reasoning_log") or {}
+    # Repo + commit drive clickable links into the upstream source.
+    link_repo = header.get("repo") or log.get("repo_name")
+    link_commit = header.get("commit")
 
     findings = analysis.get("findings") or []
     verdict = (
@@ -202,10 +265,10 @@ def build_review_report(
     if spec_text:
         lines += ["## Spec compliance", "", spec_text, ""]
 
-    lines += _files_section(log.get("analysed_files") or [])
+    lines += _files_section(log.get("analysed_files") or [], link_repo, link_commit)
     lines += _spec_section(log)
     lines += _process_section(log.get("transcript") or [], detail)
-    lines += _findings_section(findings)
+    lines += _findings_section(findings, link_repo, link_commit)
 
     # Clean, fence-safe JSON inside a collapsible block (note the blank lines —
     # GitHub needs them to render a fenced block nested in <details>).
