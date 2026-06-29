@@ -66,6 +66,34 @@ def test_report_non_fork_repo_has_no_fork_note():
     assert "fork:" not in out
 
 
+def test_report_renders_analysis_and_spec_compliance_sections():
+    analysis = _analysis()
+    analysis["analysis"] = "Traced `is_awaiting_event()` to both call sites in `mod.rs`."
+    analysis["spec_compliance"] = "Not spec-relevant; does not touch EIP-7594 behavior."
+    out = build_review_report(analysis, None)
+    assert "## Analysis" in out
+    assert "Traced `is_awaiting_event()` to both call sites" in out
+    assert "## Spec compliance" in out
+    assert "EIP-7594" in out
+
+
+def test_report_omits_empty_analysis_sections():
+    out = build_review_report(_analysis(), None)  # no analysis/spec_compliance
+    assert "## Analysis" not in out
+    assert "## Spec compliance" not in out
+
+
+def test_stream_suppresses_json_answer_and_empty_thinking(capsys):
+    from ethereum_code_reviewer.claude_review import _print_stream_block
+    _print_stream_block("thinking", "   ")                       # empty -> skip
+    _print_stream_block("text", '{"has_vulnerabilities": false}')  # JSON answer -> skip
+    _print_stream_block("text", "I traced the call sites.")        # real reasoning -> shown
+    err = capsys.readouterr().err
+    assert "has_vulnerabilities" not in err
+    assert "thinking:" not in err
+    assert "I traced the call sites." in err
+
+
 def test_report_clean_verdict_includes_summary_and_files():
     analysis = _analysis(
         analysed_files=[{"file": "a.rs", "ranges": [(10, 20)]}],

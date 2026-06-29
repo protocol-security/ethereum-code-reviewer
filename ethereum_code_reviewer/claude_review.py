@@ -88,8 +88,19 @@ def _tool_summary(tool_input: Dict[str, Any]) -> str:
 def _print_stream_block(kind: str, payload: Any) -> None:
     """Print one streamed event to stderr (flushed, colorized for live CI)."""
     if kind == "thinking":
-        line = _c("2", "  thinking: " + _oneline(payload, 300))
+        if not (payload or "").strip():
+            return  # skip empty/redacted thinking blocks
+        # Thinking is the reasoning the user wants to watch — give it room and
+        # keep its paragraph breaks (indented) rather than clipping to one line.
+        body = "\n".join("  " + ln for ln in payload.strip().splitlines())
+        line = _c("2", "  thinking:\n" + body)
     elif kind == "text":
+        # Don't echo the final JSON answer — it's noise in the log (and may carry
+        # fields we don't surface, like a volunteered confidence score). It is
+        # rendered, cleaned, in the report.
+        stripped = (payload or "").strip()
+        if not stripped or _looks_like_json_review(stripped) or stripped.startswith("{"):
+            return
         line = _c("36", "  reasoning: ") + _paint_signals(_oneline(payload, 300))
     elif kind == "tool":
         name = payload.get("name", "tool")
@@ -226,6 +237,8 @@ def _validate_response(response: Dict[str, Any]) -> Dict[str, Any]:
 
     response.setdefault("findings", [])
     response.setdefault("summary", "")
+    response.setdefault("analysis", "")
+    response.setdefault("spec_compliance", "")
 
     if not response["has_vulnerabilities"]:
         response["findings"] = []
@@ -383,6 +396,14 @@ class SecurityReview:
                 model=self.model,
                 max_turns=self.max_turns,
                 max_thinking_tokens=self.max_thinking_tokens,
+                # Surface the model's reasoning: "summarized" returns visible
+                # thinking text. Without this, thinking blocks come back omitted
+                # (empty) and the live "thinking:" lines are blank.
+                thinking={
+                    "type": "enabled",
+                    "budget_tokens": self.max_thinking_tokens,
+                    "display": "summarized",
+                },
                 cwd=working_directory or str(REPO_ROOT),
                 disallowed_tools=DISALLOWED_TOOLS,
             )
@@ -518,14 +539,20 @@ Head commit: {head_sha or "not specified"}
 
 You must validate whether the changed implementation matches the relevant EIPs/specification for the configured hardfork when one is provided. Flag deviations, missing required behavior, or security-sensitive mismatches with the hardfork spec.
 
-Write all prose fields (summary, description, explanations, recommendations) in
-GitHub-flavored Markdown. ALWAYS wrap code identifiers — function names, type
-names, variants, fields, paths, e.g. `is_awaiting_event()`,
-`DataRequest::WaitingForBlock` — in backticks so they render as inline code.
+Base every claim on the actual code you read, not the diff alone. Your verdict
+must be backed by reasoning a maintainer can follow and check.
+
+Write all prose fields in GitHub-flavored Markdown. ALWAYS wrap code identifiers
+— function names, type names, variants, fields, paths, e.g. `is_awaiting_event()`,
+`DataRequest::WaitingForBlock` — in backticks so they render as inline code. Use
+short paragraphs and bullet lists; reference files and line numbers you inspected.
 
 Return ONLY a JSON object with this shape:
 {{
   "has_vulnerabilities": <true/false>,
+  "summary": "<2-4 sentence verdict: what the change does and why it is or isn't safe>",
+  "analysis": "<the core of the review, in Markdown. Explain: (1) what the changed code actually does, (2) the control flow you traced through the real source — the functions, call sites, and invariants you checked and what they guarantee, (3) the security reasoning that leads to your verdict (why each potential failure mode is or isn't reachable). Cite the files/lines you read.>",
+  "spec_compliance": "<how the change relates to the relevant EIP(s)/hardfork spec: cite EIP numbers and the specific requirement, and state whether the implementation matches it. Write 'Not spec-relevant' if the change does not touch consensus/spec-governed behavior.>",
   "findings": [
     {{
       "severity": "HIGH|MEDIUM|LOW",
@@ -537,8 +564,7 @@ Return ONLY a JSON object with this shape:
       "code_example": "<example patch or code excerpt>",
       "additional_resources": "<optional references>"
     }}
-  ],
-  "summary": "<brief summary mentioning only concrete vulnerabilities>"
+  ]
 }}
 
 {docs_context.text if docs_context.text else ""}

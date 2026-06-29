@@ -194,6 +194,14 @@ def build_review_report(
     summary = (analysis.get("summary") or "").strip()
     lines += ["## Summary", "", summary or "_No summary provided._", ""]
 
+    analysis_text = (analysis.get("analysis") or "").strip()
+    if analysis_text:
+        lines += ["## Analysis", "", analysis_text, ""]
+
+    spec_text = (analysis.get("spec_compliance") or "").strip()
+    if spec_text:
+        lines += ["## Spec compliance", "", spec_text, ""]
+
     lines += _files_section(log.get("analysed_files") or [])
     lines += _spec_section(log)
     lines += _process_section(log.get("transcript") or [], detail)
