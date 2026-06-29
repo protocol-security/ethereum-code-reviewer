@@ -96,10 +96,12 @@ def _print_stream_block(kind: str, payload: Any) -> None:
         color = _TOOL_COLORS.get(name, "1;37")
         line = _c(color, f"🔧 {name}") + "  " + _c("2", _oneline(_tool_summary(payload.get("input") or {}), 240))
     elif kind == "result":
-        subtype, text = payload
+        # Don't echo the result body — it just repeats the last assistant text.
+        # A short completion marker keeps the live log clean.
+        subtype = payload
         ok = subtype in (None, "success")
-        head = _c("1;32" if ok else "1;31", f"✅ {subtype or 'done'}" if ok else f"⚠️ {subtype}")
-        line = head + ": " + _paint_signals(_oneline(text or "", 400))
+        line = _c("1;32" if ok else "1;31",
+                  "✅ review complete" if ok else f"⚠️ ended: {subtype}")
     else:
         return
     print("\n" + line, file=sys.stderr, flush=True)
@@ -225,17 +227,9 @@ def _validate_response(response: Dict[str, Any]) -> Dict[str, Any]:
 
     response.setdefault("findings", [])
     response.setdefault("summary", "")
-    response.setdefault("confidence_score", 0)
 
     if not response["has_vulnerabilities"]:
-        response["confidence_score"] = 100
         response["findings"] = []
-        return response
-
-    if response["findings"]:
-        response["confidence_score"] = max(
-            finding.get("confidence", 50) for finding in response["findings"]
-        )
 
     return response
 
@@ -436,7 +430,7 @@ class SecurityReview:
                         serialized["result"] = message.result
                         result = message.result or result
                         if self.stream_live:
-                            _print_stream_block("result", (getattr(message, "subtype", None), message.result))
+                            _print_stream_block("result", getattr(message, "subtype", None))
 
                     if hasattr(message, "subtype"):
                         serialized["subtype"] = message.subtype
@@ -511,16 +505,19 @@ Head commit: {head_sha or "not specified"}
 
 You must validate whether the changed implementation matches the relevant EIPs/specification for the configured hardfork when one is provided. Flag deviations, missing required behavior, or security-sensitive mismatches with the hardfork spec.
 
+Write all prose fields (summary, description, explanations, recommendations) in
+GitHub-flavored Markdown. ALWAYS wrap code identifiers — function names, type
+names, variants, fields, paths, e.g. `is_awaiting_event()`,
+`DataRequest::WaitingForBlock` — in backticks so they render as inline code.
+
 Return ONLY a JSON object with this shape:
 {{
-  "confidence_score": <0-100>,
   "has_vulnerabilities": <true/false>,
   "findings": [
     {{
       "severity": "HIGH|MEDIUM|LOW",
       "description": "<specific vulnerability with exact location>",
       "recommendation": "<precise fix>",
-      "confidence": <0-100>,
       "detailed_explanation": "<what the issue is>",
       "impact_explanation": "<what can happen>",
       "detailed_recommendation": "<how to fix it>",
@@ -623,28 +620,21 @@ Return ONLY a JSON object with this shape:
             extra_prompt=extra_prompt,
         )
 
-    def create_report_comment(self, pr: PullRequest, analysis: Dict[str, Any], cost_info: CostInfo = None) -> None:
-        report = f"""## Security Review
+    def create_report_comment(
+        self,
+        pr: PullRequest,
+        analysis: Dict[str, Any],
+        cost_info: CostInfo = None,
+        header: Optional[Dict[str, Any]] = None,
+        detail: str = "summary",
+    ) -> None:
+        # GitHub renders Markdown in comments, so post the same polished report
+        # used for the job summary (PR link, fork-aware repo, code blocks, etc.).
+        from .report import build_review_report
 
-**Confidence Score:** {analysis['confidence_score']}%
-**Detected Security Issues:** {'Yes' if analysis['has_vulnerabilities'] else 'No'}
-
-### Summary
-{analysis['summary']}
-
-"""
-
-        if analysis["findings"]:
-            report += "\n### Detailed Findings\n"
-            for finding in analysis["findings"]:
-                report += f"""
-#### {finding['severity']} Severity Issue
-- **Description:** {finding['description']}
-- **Recommendation:** {finding['recommendation']}
-- **Confidence:** {finding['confidence']}%
-"""
-
-        pr.create_issue_comment(report)
+        pr.create_issue_comment(
+            build_review_report(analysis, cost_info, header=header, detail=detail)
+        )
 
     def create_commit_issue(self, repo_name: str, commit_info: CommitInfo, analysis: Dict[str, Any], cost_info: CostInfo = None) -> None:
         if not self.github:
@@ -660,7 +650,6 @@ Return ONLY a JSON object with this shape:
 **Date:** {commit_info.date}
 **Message:** {commit_info.message}
 
-**Confidence Score:** {analysis['confidence_score']}%
 **Detected Security Issues:** {'Yes' if analysis['has_vulnerabilities'] else 'No'}
 
 ### Summary
@@ -674,7 +663,6 @@ Return ONLY a JSON object with this shape:
 #### {finding['severity']} Severity Issue
 - **Description:** {finding['description']}
 - **Recommendation:** {finding['recommendation']}
-- **Confidence:** {finding['confidence']}%
 """
 
         labels = ["security"]

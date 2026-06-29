@@ -30,7 +30,7 @@ class _FakeReviewer:
     def analyze_security(self, changes, **kwargs):
         self.captured = dict(kwargs)
         self.captured["changes"] = changes
-        return ({"has_vulnerabilities": False, "confidence_score": 100, "findings": [], "summary": "ok"}, None)
+        return ({"has_vulnerabilities": False, "findings": [], "summary": "ok"}, None)
 
 
 def test_run_start_commit_review_forwards_target_fields(monkeypatch):

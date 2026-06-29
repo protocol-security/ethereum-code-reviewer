@@ -104,11 +104,22 @@ def main():
         resolved_model = model or os.environ.get('CLAUDE_MODEL') or os.environ.get('INPUT_CLAUDE-MODEL')
         return {'model': resolved_model} if resolved_model else {}
 
+    def pr_header(pr, configured_repo: str) -> Dict[str, object]:
+        """Display metadata for a PR: link, upstream repo, and fork origin."""
+        upstream = pr.base.repo.full_name
+        return {
+            "title": f"PR #{pr.number}: {pr.title or ''}".strip(),
+            "url": pr.html_url,
+            "repo": upstream,
+            "fork_of": configured_repo if configured_repo != upstream else None,
+            "branch": pr.base.ref,
+        }
+
     def emit_report(analysis: Dict[str, object], cost_info: Optional[CostInfo],
-                    title: Optional[str] = None) -> None:
+                    title: Optional[str] = None, header: Optional[Dict[str, object]] = None) -> None:
         """Render the polished report to the Action log and the job summary."""
         emit_review_report(
-            build_review_report(analysis, cost_info, title=title, detail=args.detail)
+            build_review_report(analysis, cost_info, title=title, header=header, detail=args.detail)
         )
 
     try:
@@ -170,7 +181,6 @@ def main():
                 text_input, agent_file_path=args.agent_file, extra_prompt=args.extra_prompt
             )
             output = {
-                "confidence_score": analysis['confidence_score'],
                 "has_vulnerabilities": analysis['has_vulnerabilities'],
                 "summary": analysis['summary'],
                 "findings": analysis['findings'],
@@ -225,10 +235,11 @@ def main():
                 changes, repo_name=repo_name, agent_file_path=args.agent_file,
                 hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
             )
-            emit_report(analysis, cost_info, title=f"PR #{pr.number}: {pr.title or ''}".strip())
+            header = pr_header(pr, repo_name)
+            emit_report(analysis, cost_info, header=header)
             if analysis['has_vulnerabilities']:
-                reviewer.create_report_comment(pr, analysis, cost_info)
-                print(f"::warning::Security vulnerabilities detected with {analysis['confidence_score']}% confidence")
+                reviewer.create_report_comment(pr, analysis, cost_info, header=header, detail=args.detail)
+                print("::warning::Security vulnerabilities detected")
             else:
                 print("::notice::No security vulnerabilities detected")
             return
@@ -237,7 +248,8 @@ def main():
 
         def emit_status(analysis: Dict[str, object]) -> None:
             if analysis['has_vulnerabilities']:
-                print(f"::warning::Security vulnerabilities detected with {analysis['confidence_score']}% confidence")
+                n = len(analysis.get('findings') or [])
+                print(f"::warning::Security review found {n} potential issue(s)")
             else:
                 print("::notice::No security vulnerabilities detected")
 
@@ -305,9 +317,10 @@ def main():
             changes, repo_name=repo_name, agent_file_path=args.agent_file,
             hardfork_name=args.hardfork, strict_specs=args.strict_specs, extra_prompt=args.extra_prompt,
         )
-        emit_report(analysis, cost_info, title=f"PR #{pr.number}: {pr.title or ''}".strip())
+        header = pr_header(pr, repo_name)
+        emit_report(analysis, cost_info, header=header)
         if args.post_comment and analysis['has_vulnerabilities']:
-            reviewer.create_report_comment(pr, analysis, cost_info)
+            reviewer.create_report_comment(pr, analysis, cost_info, header=header, detail=args.detail)
         emit_status(analysis)
         return
 

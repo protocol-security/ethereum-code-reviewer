@@ -86,8 +86,6 @@ def _findings_section(findings: List[Dict[str, Any]]) -> List[str]:
         severity = finding.get("severity", "?")
         badge = SEVERITY_BADGE.get(severity, "⚪")
         lines.append(f"### {badge} {severity} — {finding.get('description', '(no description)')}")
-        if finding.get("confidence") is not None:
-            lines.append(f"*Confidence: {finding['confidence']}%*")
         lines.append("")
         if finding.get("detailed_explanation"):
             lines += ["**What it is**", "", finding["detailed_explanation"], ""]
@@ -120,36 +118,71 @@ def _spec_section(log: Dict[str, Any]) -> List[str]:
     return ["## 📚 Spec context", "", "  \n".join(parts), ""]
 
 
+def _repo_line(header: Dict[str, Any], log: Dict[str, Any]) -> Optional[str]:
+    """Render the repository, showing the upstream with a fork badge if forked."""
+    repo = (header or {}).get("repo") or log.get("repo_name")
+    if not repo:
+        return None
+    link = f"[{repo}](https://github.com/{repo})"
+    fork_of = (header or {}).get("fork_of")
+    if fork_of:
+        return f"**Repository:** 🍴 {link} · _reviewed from fork_ `{fork_of}`"
+    return f"**Repository:** {link}"
+
+
+def _clean_json(analysis: Dict[str, Any]) -> str:
+    """Serialize the review as clean JSON (no internal/log keys, no stray fences).
+
+    Re-serializing rather than echoing the model's raw string avoids nested code
+    fences — the model often wraps its JSON in its own ```json block, which would
+    collide with ours and break the rendered Markdown.
+    """
+    clean = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    return json.dumps(clean, indent=2, ensure_ascii=False)
+
+
 def build_review_report(
     analysis: Dict[str, Any],
     cost_info: Optional[Any] = None,
     *,
     title: Optional[str] = None,
+    header: Optional[Dict[str, Any]] = None,
     detail: str = "summary",
 ) -> str:
-    """Render the analysis into a Markdown report."""
+    """Render the analysis into a Markdown report.
+
+    ``header`` carries display metadata for the title/link/repository:
+    ``{title, url, repo, fork_of, branch}``. ``title`` is a convenience for the
+    common case (commit/file modes) where there's no link or fork to show.
+    """
     detail = detail if detail in DETAIL_LEVELS else "summary"
+    header = header or ({"title": title} if title else {})
     log: Dict[str, Any] = analysis.get("_reasoning_log") or {}
 
-    has_vulns = analysis.get("has_vulnerabilities")
     findings = analysis.get("findings") or []
-    if has_vulns:
-        verdict = f"⚠️ **{len(findings)} potential issue(s) found** ({analysis.get('confidence_score', 0)}% confidence)"
-    else:
-        verdict = "✅ **No vulnerabilities detected**"
+    verdict = (
+        f"⚠️ **{len(findings)} potential issue(s) found**"
+        if analysis.get("has_vulnerabilities")
+        else "✅ **No vulnerabilities detected**"
+    )
 
     lines: List[str] = ["# 🛡️ Ethereum Code Review", ""]
-    if title:
-        lines += [f"### {title}", ""]
+
+    head_title = header.get("title") or title
+    if head_title:
+        url = header.get("url")
+        lines += [f"### [{head_title}]({url})" if url else f"### {head_title}", ""]
 
     meta_bits = [verdict]
-    if log.get("repo_name"):
-        meta_bits.append(f"**Repository:** {log['repo_name']}")
-    if log.get("branch_name"):
-        meta_bits.append(f"**Branch:** {log['branch_name']}")
+    repo_line = _repo_line(header, log)
+    if repo_line:
+        meta_bits.append(repo_line)
+    branch = header.get("branch") or log.get("branch_name")
+    if branch:
+        meta_bits.append(f"**Branch:** `{branch}`")
     model = getattr(cost_info, "model", None)
     if model:
-        meta_bits.append(f"**Model:** {model}")
+        meta_bits.append(f"**Model:** `{model}`")
     lines += ["  \n".join(meta_bits), ""]
 
     summary = (analysis.get("summary") or "").strip()
@@ -160,23 +193,39 @@ def build_review_report(
     lines += _process_section(log.get("transcript") or [], detail)
     lines += _findings_section(findings)
 
-    raw = (log.get("raw_output") or "").strip()
-    if raw:
-        lines += [
-            "<details><summary>Raw JSON review</summary>", "",
-            "```json", raw, "```", "", "</details>", "",
-        ]
+    # Clean, fence-safe JSON inside a collapsible block (note the blank lines —
+    # GitHub needs them to render a fenced block nested in <details>).
+    lines += [
+        "<details>",
+        "<summary>Raw JSON review</summary>",
+        "",
+        "```json",
+        _clean_json(analysis),
+        "```",
+        "",
+        "</details>",
+        "",
+    ]
 
     return "\n".join(lines).rstrip() + "\n"
 
 
 def emit_review_report(report: str) -> None:
-    """Print the report to stdout and append it to the GitHub job summary."""
-    print(report)
+    """Render the report to the GitHub job summary (the run's "Summary" tab).
+
+    GitHub Action step logs are plain text and never render Markdown, so dumping
+    the report there just shows raw ``#``/``##`` noise. Instead we write it to
+    ``$GITHUB_STEP_SUMMARY`` (rendered Markdown on the run page) and only fall
+    back to stdout when that's unavailable (e.g. running locally).
+    """
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         try:
             with open(summary_path, "a", encoding="utf-8") as handle:
                 handle.write(report + "\n")
+            print("\n📋 Full review report added to the run's Summary tab.")
+            return
         except OSError as exc:  # don't fail the review over a summary write
             print(f"::warning::Could not write job summary: {exc}")
+    # No job summary (local/CLI): print the Markdown so it's still visible.
+    print(report)
