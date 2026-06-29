@@ -210,8 +210,7 @@ def main():
                     "PR URL/number as the target, or leave it empty with --repository to review the latest open PR."
                 )
             repo_name = event['repository']['full_name']
-            repo = reviewer.github.get_repo(repo_name)
-            pr = repo.get_pull(event['pull_request']['number'])
+            pr = reviewer.get_pr(repo_name, event['pull_request']['number'])
             changes = reviewer.get_pr_changes(pr)
             analysis, cost_info = reviewer.analyze_security(
                 changes, repo_name=repo_name, agent_file_path=args.agent_file,
@@ -279,8 +278,7 @@ def main():
                 repo_name, pr_number = args.repository, int(args.target)
             else:
                 repo_name, pr_number = parse_pr_url(args.target)
-            repo = reviewer.github.get_repo(repo_name)
-            pr = repo.get_pull(pr_number)
+            pr = reviewer.get_pr(repo_name, pr_number)
         else:
             if not args.repository:
                 raise ValueError("Provide a PR URL/number, or --repository to review the latest open PR")

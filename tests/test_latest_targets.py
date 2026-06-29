@@ -12,10 +12,15 @@ def _reviewer_with_github(fake_github):
 
 
 class _FakeRepo:
-    def __init__(self, default_branch="main", branch_shas=None, open_prs=None):
+    def __init__(self, default_branch="main", branch_shas=None, open_prs=None,
+                 full_name="o/r", fork=False, source=None, pulls=None):
         self.default_branch = default_branch
         self._branch_shas = branch_shas or {}
         self._open_prs = open_prs or []
+        self.full_name = full_name
+        self.fork = fork
+        self.source = source
+        self._pulls = pulls or {}
 
     def get_branch(self, ref):
         sha = self._branch_shas[ref]
@@ -25,13 +30,17 @@ class _FakeRepo:
         assert state == "open"
         return list(self._open_prs)  # newest-first; supports [:1] slicing
 
+    def get_pull(self, number):
+        return self._pulls[number]
+
 
 class _FakeGithub:
-    def __init__(self, repo):
+    def __init__(self, repo, repos=None):
         self._repo = repo
+        self._repos = repos or {}
 
     def get_repo(self, name):
-        return self._repo
+        return self._repos.get(name, self._repo)
 
 
 def test_get_latest_commit_sha_uses_given_branch():
@@ -58,3 +67,24 @@ def test_get_latest_open_pr_none_when_empty():
     repo = _FakeRepo(open_prs=[])
     r = _reviewer_with_github(_FakeGithub(repo))
     assert r.get_latest_open_pr("o/r") is None
+
+
+def test_get_pr_reads_from_upstream_when_fork():
+    upstream = _FakeRepo(full_name="up/r", pulls={10: types.SimpleNamespace(number=10)})
+    fork = _FakeRepo(full_name="me/r", fork=True, source=upstream)
+    r = _reviewer_with_github(_FakeGithub(fork))
+    assert r.get_pr("me/r", 10).number == 10
+
+
+def test_get_pr_uses_repo_directly_when_not_fork():
+    repo = _FakeRepo(full_name="o/r", pulls={5: types.SimpleNamespace(number=5)})
+    r = _reviewer_with_github(_FakeGithub(repo))
+    assert r.get_pr("o/r", 5).number == 5
+
+
+def test_get_latest_open_pr_reads_from_upstream_when_fork():
+    newest = types.SimpleNamespace(number=99)
+    upstream = _FakeRepo(full_name="up/r", open_prs=[newest])
+    fork = _FakeRepo(full_name="me/r", fork=True, source=upstream, open_prs=[])
+    r = _reviewer_with_github(_FakeGithub(fork))
+    assert r.get_latest_open_pr("me/r").number == 99

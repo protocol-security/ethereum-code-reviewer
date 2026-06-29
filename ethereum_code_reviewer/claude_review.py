@@ -182,6 +182,29 @@ class SecurityReview:
             "agents/execution-layer/AGENTS.md."
         )
 
+    def _resolve_pr_repo(self, repo_name: str):
+        """Return the repo PRs should be read from.
+
+        When the action runs on a fork, pull requests live on the upstream
+        (source) repository, not the fork. GitHub returns 404 for
+        ``fork.get_pull(n)`` in that case, so redirect to the upstream repo.
+        """
+        if not self.github:
+            raise ValueError("GitHub client not initialized")
+        repo = self.github.get_repo(repo_name)
+        if getattr(repo, "fork", False):
+            upstream = getattr(repo, "source", None) or getattr(repo, "parent", None)
+            if upstream is not None:
+                print(
+                    f"\n{repo_name} is a fork; reading PRs from upstream "
+                    f"{upstream.full_name}"
+                )
+                return upstream
+        return repo
+
+    def get_pr(self, repo_name: str, pr_number: int) -> PullRequest:
+        return self._resolve_pr_repo(repo_name).get_pull(pr_number)
+
     def get_pr_changes(self, pr: PullRequest) -> str:
         changes = []
         for file in pr.get_files():
@@ -197,9 +220,7 @@ class SecurityReview:
         return list(prs[:count])
 
     def get_latest_open_pr(self, repo_name: str) -> Optional[PullRequest]:
-        if not self.github:
-            raise ValueError("GitHub client not initialized")
-        repo = self.github.get_repo(repo_name)
+        repo = self._resolve_pr_repo(repo_name)
         prs = list(repo.get_pulls(state="open", sort="created", direction="desc")[:1])
         return prs[0] if prs else None
 
